@@ -1,5 +1,6 @@
 import type { DailyRecord, DayShiftSetting, HalfDayRuleType, JobType, LeaveMark, MonthlyAttendance, KnownShiftCode } from "@/types/kintai";
 import { parseISODate } from "@/lib/date";
+import { HOLIDAY_WORK_ID, isHolidayWork, isSubstituteWork } from "@/lib/holiday-work";
 import { shiftFor } from "@/lib/shifts";
 import { formatMinutesJa, parseDurationMinutes, parseHHMM, formatHHMM, scheduledWorkMinutes } from "@/lib/time";
 
@@ -77,7 +78,9 @@ function clockMinutes(record: DailyRecord): number | null {
 }
 
 export function exportShiftCode(job: JobType, record: DailyRecord): Exclude<KnownShiftCode, "" | "free"> | null {
-  if (record.shiftCode === "明け" || hasFullLeave(record)) return null;
+  if (record.shiftCode === "明け" || hasFullLeave(record) || isHolidayWork(record) || record.patternId === HOLIDAY_WORK_ID) {
+    return null;
+  }
   if (record.contractStart && record.contractEnd) return matchScheduledMinutes(job, contractMinutes(record));
   const known = shiftFor(record.shiftCode);
   if (known && known.jobs.includes(job)) return known.code;
@@ -85,7 +88,9 @@ export function exportShiftCode(job: JobType, record: DailyRecord): Exclude<Know
 }
 
 export function shiftMarkFor(record: DailyRecord): LeaveMark {
-  if (record.shiftCode === "明け" || hasFullLeave(record)) return "";
+  if (record.shiftCode === "明け" || hasFullLeave(record) || isHolidayWork(record) || record.patternId === HOLIDAY_WORK_ID) {
+    return "";
+  }
   const known = Boolean(shiftFor(record.shiftCode));
   const timed = Boolean((record.contractStart && record.contractEnd) || (record.clockIn && record.clockOut));
   if (!known && !timed) return "";
@@ -145,7 +150,11 @@ export function noteForExport(record: DailyRecord, job?: JobType): string {
           : record.halfDayType === "pm_off"
             ? "午後休"
             : "";
-  const pattern = job && exportShiftCode(job, record) ? "" : patternNote(record);
+  // 休出・振出は備考タグを正とし、パターン名（休出/振出）の二重印字を避ける
+  const pattern =
+    isHolidayWork(record) || isSubstituteWork(record) || (job && exportShiftCode(job, record))
+      ? ""
+      : patternNote(record);
   const memo = record.note.trim();
   const text = pattern && !memo.includes(pattern) ? (memo ? `${pattern} ${memo}` : pattern) : memo;
   if (!tag) return text;

@@ -16,6 +16,8 @@ export function ScheduleBar({
   onApplyPattern,
   onAke,
   onLeave,
+  onHolidayWork,
+  onSubstituteWork,
 }: {
   role: StaffRole;
   employmentType: EmploymentType;
@@ -28,6 +30,8 @@ export function ScheduleBar({
   onApplyPattern: (pattern: CustomShiftPattern) => void;
   onAke: () => void;
   onLeave: (kind: "koukyu" | "yukyu") => void;
+  onHolidayWork?: () => void;
+  onSubstituteWork?: () => void;
 }) {
   return (
     <section className="rounded-2xl bg-gradient-to-r from-white via-slate-50 to-sky-50/40 p-4 ring-1 ring-slate-200/80" aria-label="本日のシフト">
@@ -92,6 +96,26 @@ export function ScheduleBar({
         >
           有休
         </button>
+        {onHolidayWork ? (
+          <button
+            type="button"
+            disabled={!canApplyToday}
+            onClick={onHolidayWork}
+            className={cn("rounded-full px-3 py-1.5 text-sm disabled:opacity-50", shiftBadgeClass("kyushutsu"))}
+          >
+            休日出勤
+          </button>
+        ) : null}
+        {onSubstituteWork ? (
+          <button
+            type="button"
+            disabled={!canApplyToday}
+            onClick={onSubstituteWork}
+            className={cn("rounded-full px-3 py-1.5 text-sm disabled:opacity-50", shiftBadgeClass("furide"))}
+          >
+            振替出勤
+          </button>
+        ) : null}
       </div>
       {patterns.length === 0 ? (
         <p className="mt-2 text-[11px] text-muted-foreground">職員の編集からマイ・シフトを登録できます。</p>

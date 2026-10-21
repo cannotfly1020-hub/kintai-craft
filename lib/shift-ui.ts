@@ -1,10 +1,12 @@
 import { cn } from "@/lib/utils";
 
-export type ShiftTone = "day" | "night" | "ake" | "half" | "yukyu" | "koukyu" | "neutral";
+export type ShiftTone = "day" | "night" | "ake" | "half" | "yukyu" | "koukyu" | "kyushutsu" | "furide" | "neutral";
 
 export function shiftToneFromLabel(label: string): ShiftTone {
   const text = label.trim();
   if (!text) return "neutral";
+  if (text.includes("休出") || text.includes("休日出勤")) return "kyushutsu";
+  if (text.includes("振出") || text.includes("振替出勤")) return "furide";
   if (text.includes("明け")) return "ake";
   if (text.includes("公休")) return "koukyu";
   if (text.includes("有休")) return "yukyu";
@@ -24,6 +26,8 @@ export function shiftBadgeClass(tone: ShiftTone, active = false): string {
     half: "border-emerald-200 bg-emerald-100 text-emerald-800",
     yukyu: "border-teal-200 bg-teal-100 text-teal-800 font-bold",
     koukyu: "border-gray-200 bg-gray-100 text-gray-600",
+    kyushutsu: "border-rose-200 bg-rose-100 text-rose-800 font-semibold",
+    furide: "border-amber-200 bg-amber-100 text-amber-800 font-semibold",
     neutral: "border-border bg-background text-foreground",
   };
   return cn(base, tones[tone], active && "ring-2 ring-offset-1 ring-sky-500");

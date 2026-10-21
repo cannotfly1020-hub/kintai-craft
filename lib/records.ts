@@ -1,11 +1,28 @@
-import type { CustomShiftPattern, DailyRecord, HalfDayType, JobType, LeaveMark, MonthlyAttendance, ShiftCode } from "@/types/kintai";
+import type { CustomShiftPattern, DailyRecord, DayShiftSetting, HalfDayType, JobType, LeaveMark, MonthlyAttendance, ShiftCode } from "@/types/kintai";
 import { computeDeviation } from "@/lib/calc";
 import { formatISODate, weekdayLabel } from "@/lib/date";
 import { isPublicRestDay } from "@/lib/holidays";
 import { getPeriod } from "@/lib/period";
-import { contractFromRecord, dutyFromPattern } from "@/lib/shift-patterns";
-import { expectedDuty, shiftFor, type DutyWindow } from "@/lib/shifts";
-import { formatShortage } from "@/lib/time";
+import { contractFromRecord, dutyFromPattern, primaryWorkPattern } from "@/lib/shift-patterns";
+import { expectedDuty, shiftFor, SHIFTS, type DutyWindow } from "@/lib/shifts";
+import {
+  HOLIDAY_WORK_ID,
+  HOLIDAY_WORK_NOTE,
+  SUBSTITUTE_WORK_ID,
+  SUBSTITUTE_WORK_NOTE,
+  isHolidayWork,
+  withHolidayNote,
+} from "@/lib/holiday-work";
+import { formatShortage, scheduledWorkMinutes } from "@/lib/time";
+
+export {
+  HOLIDAY_WORK_ID,
+  HOLIDAY_WORK_NOTE,
+  SUBSTITUTE_WORK_ID,
+  SUBSTITUTE_WORK_NOTE,
+  isHolidayWork,
+  isSubstituteWork,
+} from "@/lib/holiday-work";
 
 export function emptyPatternFields(): Pick<
   DailyRecord,
@@ -323,22 +340,135 @@ export function chooseKekkin(record: DailyRecord, mark: LeaveMark): DailyRecord 
   return { ...record, kekkin: "" };
 }
 
+function overtimeSpanForDuty(duty: Pick<DutyWindow, "start" | "end" | "overnight">): string {
+  if (!duty.start || !duty.end) return "";
+  return duty.overnight ? `${duty.start}〜翌${duty.end}` : `${duty.start}〜${duty.end}`;
+}
+
+/** 職員の標準勤務（マイ・シフト優先、なければ職種デフォルト） */
+export function resolveStandardWork(input: {
+  patterns?: CustomShiftPattern[];
+  weeklySchedule?: Record<number, DayShiftSetting>;
+  sheetType: JobType;
+}): { duty: DutyWindow; shiftCode: ShiftCode; pattern: CustomShiftPattern | null } {
+  const pattern = primaryWorkPattern(input.patterns ?? []);
+  if (pattern) {
+    const duty = dutyFromPattern(pattern);
+    if (duty) {
+      return {
+        duty,
+        shiftCode: (pattern.shiftCode.trim() || pattern.label.trim() || (input.sheetType === "pt" ? "B-2" : "7.5H")) as ShiftCode,
+        pattern,
+      };
+    }
+  }
+  const week = input.weeklySchedule;
+  if (week) {
+    const workday = [1, 2, 3, 4, 5].map((day) => week[day]).find((day) => day && !day.isHoliday && day.startTime && day.endTime);
+    if (workday) {
+      return {
+        duty: {
+          start: workday.startTime,
+          end: workday.endTime,
+          breakMinutes: workday.breakMinutes,
+          scheduledMinutes: workday.scheduledMinutes,
+          overnight: workday.startTime > workday.endTime,
+        },
+        shiftCode: workday.shiftCode || (input.sheetType === "pt" ? "B-2" : "7.5H"),
+        pattern: null,
+      };
+    }
+  }
+  const fallback = input.sheetType === "pt" ? SHIFTS["B-2"] : SHIFTS["7.5H"] ?? SHIFTS["A-1"];
+  return {
+    duty: {
+      start: fallback.start,
+      end: fallback.end,
+      breakMinutes: fallback.breakMinutes,
+      scheduledMinutes: fallback.scheduledMinutes,
+    },
+    shiftCode: fallback.code,
+    pattern: null,
+  };
+}
+
+/** 休日出勤: 実働全量を時間外・休日へ、備考に「休日出勤」 */
+export function applyHolidayWork(record: DailyRecord, duty: DutyWindow): DailyRecord {
+  const worked = scheduledWorkMinutes(duty.start, duty.end, duty.breakMinutes);
+  return {
+    ...record,
+    ...emptyPatternFields(),
+    patternId: HOLIDAY_WORK_ID,
+    patternLabel: "休出",
+    shiftCode: "",
+    clockIn: duty.start,
+    clockOut: duty.end,
+    breakMinutes: duty.breakMinutes,
+    isOvernight: Boolean(duty.overnight),
+    halfDayType: "none",
+    koukyu: "",
+    tokki: "",
+    yukyu: "",
+    kekkin: record.kekkin === "○" ? "" : record.kekkin,
+    overtimeSpan: overtimeSpanForDuty(duty),
+    overtimeMinutes: worked,
+    overtimeManual: true,
+    shortageTime: "",
+    shortageManual: true,
+    note: withHolidayNote(record.note, HOLIDAY_WORK_NOTE),
+  };
+}
+
+/** 振替出勤: 通常出勤印＋所定超過のみ残業、備考に「振替出勤」 */
+export function applySubstituteWork(
+  record: DailyRecord,
+  standard: { duty: DutyWindow; shiftCode: ShiftCode; pattern: CustomShiftPattern | null },
+): DailyRecord {
+  const base = standard.pattern
+    ? applyShiftPattern(record, standard.pattern)
+    : chooseShift(record, standard.shiftCode);
+  return {
+    ...base,
+    patternId: standard.pattern?.id || SUBSTITUTE_WORK_ID,
+    patternLabel: standard.pattern?.label.trim() || "振出",
+    note: withHolidayNote(record.note, SUBSTITUTE_WORK_NOTE),
+  };
+}
+
 export function editClocks(
   record: DailyRecord,
   patch: Partial<Pick<DailyRecord, "clockIn" | "clockOut" | "breakMinutes">>,
   personalMinutes?: number | null,
   dutyOverride?: DutyWindow | null,
 ): DailyRecord {
-  return deriveRecord(
+  const next = deriveRecord(
     {
       ...record,
       ...patch,
-      overtimeManual: record.shiftCode === "free" && !record.contractStart ? record.overtimeManual : false,
-      shortageManual: false,
+      overtimeManual:
+        isHolidayWork(record) || (record.shiftCode === "free" && !record.contractStart) ? record.overtimeManual : false,
+      shortageManual: isHolidayWork(record) ? true : false,
     },
     personalMinutes,
     dutyOverride,
   );
+  if (!isHolidayWork(record) && next.patternId !== HOLIDAY_WORK_ID) return next;
+  const clockIn = next.clockIn;
+  const clockOut = next.clockOut;
+  const worked = clockIn && clockOut ? scheduledWorkMinutes(clockIn, clockOut, next.breakMinutes) : 0;
+  return {
+    ...next,
+    patternId: HOLIDAY_WORK_ID,
+    patternLabel: "休出",
+    shiftCode: "",
+    koukyu: "",
+    overtimeSpan: clockIn && clockOut ? overtimeSpanForDuty({ start: clockIn, end: clockOut, overnight: next.isOvernight }) : "",
+    overtimeMinutes: worked,
+    overtimeManual: true,
+    shortageTime: "",
+    shortageManual: true,
+    note: withHolidayNote(next.note, HOLIDAY_WORK_NOTE),
+  };
 }
 
 export function editShortage(record: DailyRecord, shortageTime: string): DailyRecord {

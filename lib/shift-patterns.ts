@@ -72,6 +72,13 @@ export function patternScheduledMinutes(pattern: Pick<CustomShiftPattern, "start
   return scheduledWorkMinutes(pattern.startTime, pattern.endTime, pattern.breakMinutes);
 }
 
+/** 標準出勤に使うマイ・シフト（実働が長いものを優先） */
+export function primaryWorkPattern(patterns: CustomShiftPattern[]): CustomShiftPattern | null {
+  const usable = patterns.filter((item) => item.startTime.trim() && item.endTime.trim());
+  if (usable.length === 0) return null;
+  return [...usable].sort((a, b) => patternScheduledMinutes(b) - patternScheduledMinutes(a))[0] ?? null;
+}
+
 export function patternButtonLabel(pattern: Pick<CustomShiftPattern, "label" | "startTime" | "endTime">): string {
   const label = jaShiftText(pattern.label.trim() || "無題");
   const end = crossesMidnight(pattern.startTime, pattern.endTime) ? `翌${pattern.endTime}` : pattern.endTime;

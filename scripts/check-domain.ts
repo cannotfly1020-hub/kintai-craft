@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
-import { computeDeviation, noteForExport, paidLeaveMinutes, summarize } from "../lib/calc";
+import {
+  computeDeviation,
+  exportShiftCode,
+  noteForExport,
+  overtimeLabel,
+  paidLeaveMinutes,
+  shiftMarkFor,
+  splitOvertimeSpan,
+  summarize,
+} from "../lib/calc";
 import { holidayName } from "../lib/holidays";
 import { renderAttendance, renderAttendanceWorkbook, resolveJobSheet, writeAttendance } from "../lib/excel/fill";
 import { createAttendanceTemplate } from "../lib/excel/template";
@@ -10,11 +19,16 @@ import { getPeriod } from "../lib/period";
 import {
   chooseFullLeave,
   chooseHalf,
+  applyHolidayWork,
   applyShiftPattern,
+  applySubstituteWork,
   chooseShift,
   createAttendance,
   editClocks,
   emptyRecord,
+  isHolidayWork,
+  isSubstituteWork,
+  resolveStandardWork,
 } from "../lib/records";
 import { applyStaffDay, applyWeeklySchedule, dayFromPattern, dayFromShiftCode, presetForRole, recomputeScheduled } from "../lib/schedule";
 import { defaultShiftPatterns, patternScheduledMinutes } from "../lib/shift-patterns";
@@ -745,6 +759,53 @@ assert.equal(sheet.pageSetup.fitToPage, true);
 assert.equal(sheet.pageSetup.fitToWidth, 1);
 assert.equal(sheet.getCell(oct1Row, 7).font?.name, "游ゴシック");
 assert.equal(attendanceFileName({ year: 2026, month: 11, jobType: "pt", staffName: "テスト太郎" }), "出勤簿_テスト太郎_2026年11月分.xlsx");
+
+const koukyuDay = chooseFullLeave(emptyRecord(new Date(2026, 9, 25)), "koukyu", true);
+assert.equal(koukyuDay.koukyu, "○");
+const holidayDuty = { start: "09:00", end: "18:00", breakMinutes: 60, scheduledMinutes: 480 };
+const kyushutsu = applyHolidayWork(koukyuDay, holidayDuty);
+assert.equal(kyushutsu.koukyu, "");
+assert.equal(kyushutsu.clockIn, "09:00");
+assert.equal(kyushutsu.clockOut, "18:00");
+assert.equal(kyushutsu.breakMinutes, 60);
+assert.equal(kyushutsu.overtimeMinutes, 480);
+assert.equal(kyushutsu.overtimeSpan, "09:00〜18:00");
+assert.equal(kyushutsu.note, "休日出勤");
+assert.equal(isHolidayWork(kyushutsu), true);
+assert.equal(shiftMarkFor(kyushutsu), "");
+assert.equal(exportShiftCode("pt", kyushutsu), null);
+assert.equal(overtimeLabel(kyushutsu.overtimeMinutes), "8時間");
+assert.deepEqual(splitOvertimeSpan(kyushutsu.overtimeSpan), { start: "09:00", end: "18:00" });
+assert.equal(noteForExport(kyushutsu), "休日出勤");
+
+const standard = resolveStandardWork({
+  patterns: defaultShiftPatterns("pt_outpatient", "full_time"),
+  sheetType: "pt",
+});
+const furide = applySubstituteWork(koukyuDay, standard);
+assert.equal(furide.koukyu, "");
+assert.equal(furide.clockIn, standard.duty.start);
+assert.equal(furide.clockOut, standard.duty.end);
+assert.equal(furide.overtimeMinutes, 0);
+assert.equal(furide.note, "振替出勤");
+assert.equal(isSubstituteWork(furide), true);
+assert.equal(shiftMarkFor(furide), "○");
+assert.equal(exportShiftCode("pt", furide), "B-2");
+assert.equal(noteForExport(furide), "振替出勤");
+
+const holidayBook = createAttendance({ year: 2026, month: 11, jobType: "pt", staffName: "休出太郎" });
+holidayBook.records = holidayBook.records.map((record) =>
+  record.date === "2026-10-25" ? applyHolidayWork(record, holidayDuty) : record,
+);
+const holidayExcel = createAttendanceTemplate();
+writeAttendance(holidayExcel, holidayBook);
+const holidaySheet = holidayExcel.getWorksheet(SHEET_NAME.pt)!;
+const holidayRow = 8 + getPeriod(2026, 11).dates.findIndex((date) => date.getFullYear() === 2026 && date.getMonth() === 9 && date.getDate() === 25);
+assert.equal(holidaySheet.getCell(holidayRow, 9).value, "09:00");
+assert.equal(holidaySheet.getCell(holidayRow, 10).value, "18:00");
+assert.equal(holidaySheet.getCell(holidayRow, 11).value, "8時間");
+assert.equal(holidaySheet.getCell(holidayRow, 13).value, "休日出勤");
+assert.equal(holidaySheet.getCell(holidayRow, 7).value, null);
 
 const formulaBook = createAttendanceTemplate();
 const formulaSheet = formulaBook.getWorksheet(SHEET_NAME.pt)!;

@@ -17,7 +17,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { formatISODate } from "@/lib/date";
 import { HALF_RULE_LABEL, ROLE_LABEL, applyStaffDay, applyWeeklySchedule } from "@/lib/schedule";
 import { formatClosingTitle, formatPeriodLabel, defaultClosing, getPeriod, shiftClosing } from "@/lib/period";
-import { applyAke, applyHolidayDefaults, applyShiftPattern, chooseFullLeave, createAttendance } from "@/lib/records";
+import {
+  applyAke,
+  applyHolidayDefaults,
+  applyHolidayWork,
+  applyShiftPattern,
+  applySubstituteWork,
+  chooseFullLeave,
+  createAttendance,
+  resolveStandardWork,
+} from "@/lib/records";
 import { JOB_LABEL } from "@/lib/shifts";
 import { loadStaffMonth, saveStaffRecords, type StaffMember } from "@/lib/staff";
 import { attendanceFileName } from "@/lib/storage";
@@ -176,6 +185,36 @@ export function AttendanceApp() {
     scrollToDay(date);
   }
 
+  function standardWork() {
+    return resolveStandardWork({
+      patterns: activeStaff.shiftPatterns,
+      weeklySchedule: activeStaff.weeklySchedule,
+      sheetType: activeStaff.sheetType,
+    });
+  }
+
+  function applyHolidayWorkDay(date: string) {
+    const record = book.records.find((item) => item.date === date);
+    if (!record) {
+      setNotice({ tone: "ok", text: "この締め月にその日がないため、休日出勤は入れていません。" });
+      return;
+    }
+    updateRecord(date, applyHolidayWork(record, standardWork().duty));
+    setNotice({ tone: "ok", text: "休日出勤を入れました（実働全量が時間外・休日になります）。" });
+    scrollToDay(date);
+  }
+
+  function applySubstituteWorkDay(date: string) {
+    const record = book.records.find((item) => item.date === date);
+    if (!record) {
+      setNotice({ tone: "ok", text: "この締め月にその日がないため、振替出勤は入れていません。" });
+      return;
+    }
+    updateRecord(date, applySubstituteWork(record, standardWork()));
+    setNotice({ tone: "ok", text: "振替出勤を入れました（所定超過のみ残業になります）。" });
+    scrollToDay(date);
+  }
+
   async function download() {
     const current = attendance;
     if (!current) return;
@@ -330,6 +369,8 @@ export function AttendanceApp() {
             scrollToDay(today);
           }}
           onLeave={(kind) => applyLeave(today, kind)}
+          onHolidayWork={() => applyHolidayWorkDay(today)}
+          onSubstituteWork={() => applySubstituteWorkDay(today)}
         />
         <SummaryPanel
           attendance={attendance}
