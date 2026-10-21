@@ -1,3 +1,4 @@
+import { HOLIDAY_WORK_ID, SUBSTITUTE_HOLIDAY_ID, SUBSTITUTE_WORK_ID } from "@/lib/holiday-work";
 import { HALF_RULE_LABEL, ROLE_LABEL } from "@/lib/schedule";
 import { EMPLOYMENT_LABEL, patternButtonLabel } from "@/lib/shift-patterns";
 import { shiftBadgeClass, shiftToneFromLabel } from "@/lib/shift-ui";
@@ -18,6 +19,7 @@ export function ScheduleBar({
   onLeave,
   onHolidayWork,
   onSubstituteWork,
+  onSubstituteHoliday,
 }: {
   role: StaffRole;
   employmentType: EmploymentType;
@@ -32,6 +34,7 @@ export function ScheduleBar({
   onLeave: (kind: "koukyu" | "yukyu") => void;
   onHolidayWork?: () => void;
   onSubstituteWork?: () => void;
+  onSubstituteHoliday?: () => void;
 }) {
   return (
     <section className="rounded-2xl bg-gradient-to-r from-white via-slate-50 to-sky-50/40 p-4 ring-1 ring-slate-200/80" aria-label="本日のシフト">
@@ -49,7 +52,11 @@ export function ScheduleBar({
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
         {patterns.map((pattern) => {
-          const selected = activePatternId === pattern.id;
+          const selected =
+            activePatternId === pattern.id &&
+            activePatternId !== HOLIDAY_WORK_ID &&
+            activePatternId !== SUBSTITUTE_WORK_ID &&
+            activePatternId !== SUBSTITUTE_HOLIDAY_ID;
           const tone = shiftToneFromLabel(pattern.label);
           return (
             <button
@@ -99,9 +106,13 @@ export function ScheduleBar({
         {onHolidayWork ? (
           <button
             type="button"
+            aria-pressed={activePatternId === HOLIDAY_WORK_ID}
             disabled={!canApplyToday}
             onClick={onHolidayWork}
-            className={cn("rounded-full px-3 py-1.5 text-sm disabled:opacity-50", shiftBadgeClass("kyushutsu"))}
+            className={cn(
+              "rounded-full px-3 py-1.5 text-sm disabled:opacity-50",
+              shiftBadgeClass("kyushutsu", activePatternId === HOLIDAY_WORK_ID),
+            )}
           >
             休日出勤
           </button>
@@ -109,11 +120,29 @@ export function ScheduleBar({
         {onSubstituteWork ? (
           <button
             type="button"
+            aria-pressed={activePatternId === SUBSTITUTE_WORK_ID}
             disabled={!canApplyToday}
             onClick={onSubstituteWork}
-            className={cn("rounded-full px-3 py-1.5 text-sm disabled:opacity-50", shiftBadgeClass("furide"))}
+            className={cn(
+              "rounded-full px-3 py-1.5 text-sm disabled:opacity-50",
+              shiftBadgeClass("furide", activePatternId === SUBSTITUTE_WORK_ID),
+            )}
           >
             振替出勤
+          </button>
+        ) : null}
+        {onSubstituteHoliday ? (
+          <button
+            type="button"
+            aria-pressed={activePatternId === SUBSTITUTE_HOLIDAY_ID}
+            disabled={!canApplyToday}
+            onClick={onSubstituteHoliday}
+            className={cn(
+              "rounded-full px-3 py-1.5 text-sm disabled:opacity-50",
+              shiftBadgeClass("furikyu", activePatternId === SUBSTITUTE_HOLIDAY_ID),
+            )}
+          >
+            振替休日
           </button>
         ) : null}
       </div>

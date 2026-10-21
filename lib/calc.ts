@@ -1,6 +1,6 @@
 import type { DailyRecord, DayShiftSetting, HalfDayRuleType, JobType, LeaveMark, MonthlyAttendance, KnownShiftCode } from "@/types/kintai";
 import { parseISODate } from "@/lib/date";
-import { HOLIDAY_WORK_ID, isHolidayWork, isSubstituteWork } from "@/lib/holiday-work";
+import { HOLIDAY_WORK_ID, isHolidayWork, isSubstituteHoliday, isSubstituteWork } from "@/lib/holiday-work";
 import { shiftFor } from "@/lib/shifts";
 import { formatMinutesJa, parseDurationMinutes, parseHHMM, formatHHMM, scheduledWorkMinutes } from "@/lib/time";
 
@@ -150,9 +150,9 @@ export function noteForExport(record: DailyRecord, job?: JobType): string {
           : record.halfDayType === "pm_off"
             ? "午後休"
             : "";
-  // 休出・振出は備考タグを正とし、パターン名（休出/振出）の二重印字を避ける
+  // 休出・振出・振休は備考タグを正とし、パターン名の二重印字を避ける
   const pattern =
-    isHolidayWork(record) || isSubstituteWork(record) || (job && exportShiftCode(job, record))
+    isHolidayWork(record) || isSubstituteWork(record) || isSubstituteHoliday(record) || (job && exportShiftCode(job, record))
       ? ""
       : patternNote(record);
   const memo = record.note.trim();

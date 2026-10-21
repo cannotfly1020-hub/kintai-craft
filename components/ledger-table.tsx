@@ -2,9 +2,13 @@ import { hasFullLeave } from "@/lib/calc";
 import { parseISODate } from "@/lib/date";
 import { holidayName } from "@/lib/holidays";
 import {
+  HOLIDAY_WORK_ID,
+  SUBSTITUTE_HOLIDAY_ID,
+  SUBSTITUTE_WORK_ID,
   applyAke,
   applyHolidayWork,
   applyShiftPattern,
+  applySubstituteHoliday,
   applySubstituteWork,
   chooseFullLeave,
   chooseHalf,
@@ -15,6 +19,8 @@ import {
   editOvertime,
   editShortage,
   isHolidayWork,
+  isSpecialDutyMode,
+  isSubstituteHoliday,
   isSubstituteWork,
   resetAutomaticOvertime,
   resolveStandardWork,
@@ -96,22 +102,37 @@ export function LedgerTable({
               !record.shiftCode &&
               !hasFullLeave(record);
             const standard = resolveStandardWork({ patterns, weeklySchedule, sheetType: jobType });
-            const statusLabel = isHolidayWork(record)
+            const specialMode = isSpecialDutyMode(record);
+            const holidayWork = isHolidayWork(record);
+            const substituteWork = isSubstituteWork(record);
+            const substituteHoliday = isSubstituteHoliday(record);
+            const statusLabel = holidayWork
               ? "休出"
-              : isSubstituteWork(record)
+              : substituteWork
                 ? "振出"
-                : record.shiftCode === "明け"
-                  ? "明け"
-                  : record.yukyu === "○"
-                    ? "有休"
-                    : record.koukyu === "○"
-                      ? "公休"
-                      : record.halfDayType === "am"
-                        ? "午前半休"
-                        : record.halfDayType === "pm"
-                          ? "午後半休"
-                          : record.patternLabel ||
-                            (record.shiftCode && record.shiftCode !== "free" ? shiftLabel(record.shiftCode) : "");
+                : substituteHoliday
+                  ? "振休"
+                  : record.shiftCode === "明け"
+                    ? "明け"
+                    : record.yukyu === "○"
+                      ? "有休"
+                      : record.koukyu === "○"
+                        ? "公休"
+                        : record.halfDayType === "am"
+                          ? "午前半休"
+                          : record.halfDayType === "pm"
+                            ? "午後半休"
+                            : record.patternLabel ||
+                              (record.shiftCode && record.shiftCode !== "free" ? shiftLabel(record.shiftCode) : "");
+            const dutySelectValue = holidayWork
+              ? HOLIDAY_WORK_ID
+              : substituteWork
+                ? SUBSTITUTE_WORK_ID
+                : substituteHoliday
+                  ? SUBSTITUTE_HOLIDAY_ID
+                  : patterns.some((pattern) => pattern.id === record.patternId)
+                    ? `pattern:${record.patternId}`
+                    : record.shiftCode;
             return (
               <tr
                 key={record.date}
@@ -135,9 +156,9 @@ export function LedgerTable({
                 <td className="px-3 py-2.5">
                   <MarkButton
                     label="公休"
-                    pressed={record.koukyu === "○"}
+                    pressed={record.koukyu === "○" && !substituteHoliday}
                     tone="koukyu"
-                    onClick={() => onRecord(record.date, chooseFullLeave(record, "koukyu", record.koukyu !== "○"))}
+                    onClick={() => onRecord(record.date, chooseFullLeave(record, "koukyu", !(record.koukyu === "○" && !substituteHoliday)))}
                   />
                 </td>
                 <td className="px-3 py-2.5">
@@ -208,13 +229,21 @@ export function LedgerTable({
                   <select
                     aria-label={`${record.date} 勤務`}
                     className={cn(field, "mt-1 min-w-28")}
-                    value={
-                      patterns.some((pattern) => pattern.id === record.patternId)
-                        ? `pattern:${record.patternId}`
-                        : record.shiftCode
-                    }
+                    value={dutySelectValue}
                     onChange={(event) => {
                       const value = event.target.value;
+                      if (value === HOLIDAY_WORK_ID) {
+                        onRecord(record.date, applyHolidayWork(record, standard.duty));
+                        return;
+                      }
+                      if (value === SUBSTITUTE_WORK_ID) {
+                        onRecord(record.date, applySubstituteWork(record, standard));
+                        return;
+                      }
+                      if (value === SUBSTITUTE_HOLIDAY_ID) {
+                        onRecord(record.date, applySubstituteHoliday(record));
+                        return;
+                      }
                       if (value.startsWith("pattern:")) {
                         const pattern = patterns.find((item) => item.id === value.slice("pattern:".length));
                         if (pattern) onRecord(record.date, applyShiftPattern(record, pattern));
@@ -228,6 +257,9 @@ export function LedgerTable({
                     }}
                   >
                     <option value="">—</option>
+                    {holidayWork ? <option value={HOLIDAY_WORK_ID}>休出</option> : null}
+                    {substituteWork ? <option value={SUBSTITUTE_WORK_ID}>振出</option> : null}
+                    {substituteHoliday ? <option value={SUBSTITUTE_HOLIDAY_ID}>振休</option> : null}
                     {patterns.map((pattern) => (
                       <option key={pattern.id} value={`pattern:${pattern.id}`}>
                         {pattern.label || patternShiftCode(pattern)}
@@ -244,7 +276,8 @@ export function LedgerTable({
                     record.shiftCode !== "free" &&
                     record.shiftCode !== "明け" &&
                     !shifts.some((item) => item.code === record.shiftCode) &&
-                    !patterns.some((pattern) => pattern.id === record.patternId) ? (
+                    !patterns.some((pattern) => pattern.id === record.patternId) &&
+                    !specialMode ? (
                       <option value={record.shiftCode}>{record.patternLabel || shiftLabel(record.shiftCode)}</option>
                     ) : null}
                     {!showAke && record.shiftCode === "明け" ? <option value="明け">明け</option> : null}
@@ -256,28 +289,34 @@ export function LedgerTable({
                     </p>
                   ) : null}
                   <div className="mt-1.5 flex max-w-64 flex-wrap gap-1">
-                    {patterns.map((pattern) => (
-                      <button
-                        key={pattern.id}
-                        type="button"
-                        aria-label={`${record.date} ${patternButtonLabel(pattern)}`}
-                        aria-pressed={record.patternId === pattern.id}
-                        onClick={() => onRecord(record.date, applyShiftPattern(record, pattern))}
-                        className={cn(
-                          "rounded-full border px-2 py-0.5 text-[10px]",
-                          shiftBadgeClass(shiftToneFromLabel(pattern.label), record.patternId === pattern.id),
-                        )}
-                      >
-                        {pattern.label.trim() || "無題"}
-                      </button>
-                    ))}
+                    {patterns.map((pattern) => {
+                      const selected = !specialMode && record.patternId === pattern.id;
+                      return (
+                        <button
+                          key={pattern.id}
+                          type="button"
+                          aria-label={`${record.date} ${patternButtonLabel(pattern)}`}
+                          aria-pressed={selected}
+                          onClick={() => onRecord(record.date, applyShiftPattern(record, pattern))}
+                          className={cn(
+                            "rounded-full border px-2 py-0.5 text-[10px]",
+                            shiftBadgeClass(shiftToneFromLabel(pattern.label), selected),
+                          )}
+                        >
+                          {pattern.label.trim() || "無題"}
+                        </button>
+                      );
+                    })}
                     {showAke ? (
                       <button
                         type="button"
                         aria-label={`${record.date} 明け`}
-                        aria-pressed={record.shiftCode === "明け"}
+                        aria-pressed={!specialMode && record.shiftCode === "明け"}
                         onClick={() => onRecord(record.date, applyAke(record))}
-                        className={cn("rounded-full px-2 py-0.5 text-[10px]", shiftBadgeClass("ake", record.shiftCode === "明け"))}
+                        className={cn(
+                          "rounded-full px-2 py-0.5 text-[10px]",
+                          shiftBadgeClass("ake", !specialMode && record.shiftCode === "明け"),
+                        )}
                       >
                         明け
                       </button>
@@ -285,29 +324,43 @@ export function LedgerTable({
                     <button
                       type="button"
                       aria-label={`${record.date} 公休`}
-                      aria-pressed={record.koukyu === "○"}
-                      onClick={() => onRecord(record.date, chooseFullLeave(record, "koukyu", record.koukyu !== "○"))}
-                      className={cn("rounded-full px-2 py-0.5 text-[10px]", shiftBadgeClass("koukyu", record.koukyu === "○"))}
+                      aria-pressed={record.koukyu === "○" && !substituteHoliday}
+                      onClick={() =>
+                        onRecord(record.date, chooseFullLeave(record, "koukyu", !(record.koukyu === "○" && !substituteHoliday)))
+                      }
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-[10px]",
+                        shiftBadgeClass("koukyu", record.koukyu === "○" && !substituteHoliday),
+                      )}
                     >
                       公休
                     </button>
                     <button
                       type="button"
                       aria-label={`${record.date} 休日出勤`}
-                      aria-pressed={isHolidayWork(record)}
+                      aria-pressed={holidayWork}
                       onClick={() => onRecord(record.date, applyHolidayWork(record, standard.duty))}
-                      className={cn("rounded-full px-2 py-0.5 text-[10px]", shiftBadgeClass("kyushutsu", isHolidayWork(record)))}
+                      className={cn("rounded-full px-2 py-0.5 text-[10px]", shiftBadgeClass("kyushutsu", holidayWork))}
                     >
                       休日出勤
                     </button>
                     <button
                       type="button"
                       aria-label={`${record.date} 振替出勤`}
-                      aria-pressed={isSubstituteWork(record)}
+                      aria-pressed={substituteWork}
                       onClick={() => onRecord(record.date, applySubstituteWork(record, standard))}
-                      className={cn("rounded-full px-2 py-0.5 text-[10px]", shiftBadgeClass("furide", isSubstituteWork(record)))}
+                      className={cn("rounded-full px-2 py-0.5 text-[10px]", shiftBadgeClass("furide", substituteWork))}
                     >
                       振替出勤
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`${record.date} 振替休日`}
+                      aria-pressed={substituteHoliday}
+                      onClick={() => onRecord(record.date, applySubstituteHoliday(record))}
+                      className={cn("rounded-full px-2 py-0.5 text-[10px]", shiftBadgeClass("furikyu", substituteHoliday))}
+                    >
+                      振替休日
                     </button>
                   </div>
                   {suggestD ? (

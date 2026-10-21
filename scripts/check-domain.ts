@@ -21,12 +21,14 @@ import {
   chooseHalf,
   applyHolidayWork,
   applyShiftPattern,
+  applySubstituteHoliday,
   applySubstituteWork,
   chooseShift,
   createAttendance,
   editClocks,
   emptyRecord,
   isHolidayWork,
+  isSubstituteHoliday,
   isSubstituteWork,
   resolveStandardWork,
 } from "../lib/records";
@@ -788,10 +790,25 @@ assert.equal(furide.clockIn, standard.duty.start);
 assert.equal(furide.clockOut, standard.duty.end);
 assert.equal(furide.overtimeMinutes, 0);
 assert.equal(furide.note, "振替出勤");
+assert.equal(furide.patternId, "substitute_work");
 assert.equal(isSubstituteWork(furide), true);
+assert.equal(isHolidayWork(furide), false);
 assert.equal(shiftMarkFor(furide), "○");
 assert.equal(exportShiftCode("pt", furide), "B-2");
 assert.equal(noteForExport(furide), "振替出勤");
+const afterDay = applyShiftPattern(furide, standard.pattern!);
+assert.equal(isSubstituteWork(afterDay), false);
+assert.equal(afterDay.note.includes("振替出勤"), false);
+assert.equal(isHolidayWork(applyShiftPattern(kyushutsu, standard.pattern!)), false);
+
+const furikyu = applySubstituteHoliday(emptyRecord(new Date(2026, 9, 22)));
+assert.equal(furikyu.koukyu, "○");
+assert.equal(furikyu.clockIn, "");
+assert.equal(furikyu.note, "振替休日");
+assert.equal(furikyu.patternId, "substitute_holiday");
+assert.equal(isSubstituteHoliday(furikyu), true);
+assert.equal(noteForExport(furikyu), "振替休日");
+assert.equal(isSubstituteHoliday(chooseFullLeave(furikyu, "koukyu", true)), false);
 
 const holidayBook = createAttendance({ year: 2026, month: 11, jobType: "pt", staffName: "休出太郎" });
 holidayBook.records = holidayBook.records.map((record) =>

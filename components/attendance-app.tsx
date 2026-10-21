@@ -22,6 +22,7 @@ import {
   applyHolidayDefaults,
   applyHolidayWork,
   applyShiftPattern,
+  applySubstituteHoliday,
   applySubstituteWork,
   chooseFullLeave,
   createAttendance,
@@ -215,6 +216,17 @@ export function AttendanceApp() {
     scrollToDay(date);
   }
 
+  function applySubstituteHolidayDay(date: string) {
+    const record = book.records.find((item) => item.date === date);
+    if (!record) {
+      setNotice({ tone: "ok", text: "この締め月にその日がないため、振替休日は入れていません。" });
+      return;
+    }
+    updateRecord(date, applySubstituteHoliday(record));
+    setNotice({ tone: "ok", text: "振替休日を入れました（公休として扱います）。" });
+    scrollToDay(date);
+  }
+
   async function download() {
     const current = attendance;
     if (!current) return;
@@ -371,6 +383,7 @@ export function AttendanceApp() {
           onLeave={(kind) => applyLeave(today, kind)}
           onHolidayWork={() => applyHolidayWorkDay(today)}
           onSubstituteWork={() => applySubstituteWorkDay(today)}
+          onSubstituteHoliday={() => applySubstituteHolidayDay(today)}
         />
         <SummaryPanel
           attendance={attendance}

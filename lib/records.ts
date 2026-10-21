@@ -8,8 +8,11 @@ import { expectedDuty, shiftFor, SHIFTS, type DutyWindow } from "@/lib/shifts";
 import {
   HOLIDAY_WORK_ID,
   HOLIDAY_WORK_NOTE,
+  SUBSTITUTE_HOLIDAY_ID,
+  SUBSTITUTE_HOLIDAY_NOTE,
   SUBSTITUTE_WORK_ID,
   SUBSTITUTE_WORK_NOTE,
+  clearSpecialDutyFlags,
   isHolidayWork,
   withHolidayNote,
 } from "@/lib/holiday-work";
@@ -18,10 +21,14 @@ import { formatShortage, scheduledWorkMinutes } from "@/lib/time";
 export {
   HOLIDAY_WORK_ID,
   HOLIDAY_WORK_NOTE,
+  SUBSTITUTE_HOLIDAY_ID,
+  SUBSTITUTE_HOLIDAY_NOTE,
   SUBSTITUTE_WORK_ID,
   SUBSTITUTE_WORK_NOTE,
   isHolidayWork,
+  isSubstituteHoliday,
   isSubstituteWork,
+  isSpecialDutyMode,
 } from "@/lib/holiday-work";
 
 export function emptyPatternFields(): Pick<
@@ -184,10 +191,11 @@ function applyDutyClocks(record: DailyRecord, personalMinutes?: number | null): 
 }
 
 export function chooseShift(record: DailyRecord, code: ShiftCode, _personalMinutes?: number | null): DailyRecord {
+  const base = clearSpecialDutyFlags(record);
   if (!code) {
     return deriveRecord(
       {
-        ...record,
+        ...base,
         ...emptyPatternFields(),
         shiftCode: "",
         clockIn: "",
@@ -205,7 +213,7 @@ export function chooseShift(record: DailyRecord, code: ShiftCode, _personalMinut
 
   if (code === "free") {
     return {
-      ...record,
+      ...base,
       ...emptyPatternFields(),
       shiftCode: "free",
       overtimeManual: true,
@@ -220,7 +228,7 @@ export function chooseShift(record: DailyRecord, code: ShiftCode, _personalMinut
 
   return applyDutyClocks(
     {
-      ...record,
+      ...base,
       ...emptyPatternFields(),
       shiftCode: code,
       halfDayType: "none",
@@ -237,8 +245,9 @@ export function applyShiftPattern(record: DailyRecord, pattern: CustomShiftPatte
   const duty = dutyFromPattern(pattern);
   if (!duty) return record;
   const shiftCode = pattern.shiftCode.trim() || pattern.label.trim() || "free";
+  const base = clearSpecialDutyFlags(record);
   return deriveRecord({
-    ...record,
+    ...base,
     shiftCode,
     patternId: pattern.id,
     patternLabel: pattern.label.trim() || shiftCode,
@@ -260,8 +269,9 @@ export function applyShiftPattern(record: DailyRecord, pattern: CustomShiftPatte
 }
 
 export function applyAke(record: DailyRecord): DailyRecord {
+  const base = clearSpecialDutyFlags(record);
   return {
-    ...record,
+    ...base,
     ...emptyPatternFields(),
     patternId: "ake",
     patternLabel: "明け",
@@ -285,8 +295,9 @@ export function applyAke(record: DailyRecord): DailyRecord {
 
 export function chooseHalf(record: DailyRecord, half: HalfDayType, personalMinutes?: number | null): DailyRecord {
   const paidHalf = half === "am" || half === "pm";
+  const base = clearSpecialDutyFlags(record);
   const next: DailyRecord = {
-    ...record,
+    ...base,
     ...emptyPatternFields(),
     halfDayType: half,
     yukyu: paidHalf ? "△" : record.yukyu === "△" ? "" : record.yukyu,
@@ -304,11 +315,12 @@ export function chooseFullLeave(
   kind: "koukyu" | "tokki" | "yukyu",
   on: boolean,
 ): DailyRecord {
+  const base = clearSpecialDutyFlags(record);
   if (!on) {
-    return { ...record, [kind]: "" };
+    return { ...base, [kind]: "" };
   }
   return {
-    ...record,
+    ...base,
     koukyu: kind === "koukyu" ? "○" : "",
     kekkin: "",
     tokki: kind === "tokki" ? "○" : "",
@@ -318,9 +330,10 @@ export function chooseFullLeave(
 }
 
 export function chooseKekkin(record: DailyRecord, mark: LeaveMark): DailyRecord {
+  const base = clearSpecialDutyFlags(record);
   if (mark === "○") {
     return {
-      ...record,
+      ...base,
       koukyu: "",
       kekkin: "○",
       tokki: "",
@@ -330,14 +343,14 @@ export function chooseKekkin(record: DailyRecord, mark: LeaveMark): DailyRecord 
   }
   if (mark === "△") {
     return deriveRecord({
-      ...record,
+      ...base,
       kekkin: "△",
       koukyu: "",
       tokki: "",
       yukyu: record.halfDayType === "none" ? "" : "△",
     });
   }
-  return { ...record, kekkin: "" };
+  return { ...base, kekkin: "" };
 }
 
 function overtimeSpanForDuty(duty: Pick<DutyWindow, "start" | "end" | "overnight">): string {
@@ -395,8 +408,9 @@ export function resolveStandardWork(input: {
 /** 休日出勤: 実働全量を時間外・休日へ、備考に「休日出勤」 */
 export function applyHolidayWork(record: DailyRecord, duty: DutyWindow): DailyRecord {
   const worked = scheduledWorkMinutes(duty.start, duty.end, duty.breakMinutes);
+  const base = clearSpecialDutyFlags(record);
   return {
-    ...record,
+    ...base,
     ...emptyPatternFields(),
     patternId: HOLIDAY_WORK_ID,
     patternLabel: "休出",
@@ -415,23 +429,40 @@ export function applyHolidayWork(record: DailyRecord, duty: DutyWindow): DailyRe
     overtimeManual: true,
     shortageTime: "",
     shortageManual: true,
-    note: withHolidayNote(record.note, HOLIDAY_WORK_NOTE),
+    note: withHolidayNote(base.note, HOLIDAY_WORK_NOTE),
   };
 }
 
-/** 振替出勤: 通常出勤印＋所定超過のみ残業、備考に「振替出勤」 */
+/** 振替出勤: 通常出勤印＋所定超過のみ残業、備考に「振替出勤」（patternId は専用IDで排他） */
 export function applySubstituteWork(
   record: DailyRecord,
   standard: { duty: DutyWindow; shiftCode: ShiftCode; pattern: CustomShiftPattern | null },
 ): DailyRecord {
+  const cleared = clearSpecialDutyFlags(record);
   const base = standard.pattern
-    ? applyShiftPattern(record, standard.pattern)
-    : chooseShift(record, standard.shiftCode);
+    ? applyShiftPattern(cleared, standard.pattern)
+    : chooseShift(cleared, standard.shiftCode);
   return {
     ...base,
-    patternId: standard.pattern?.id || SUBSTITUTE_WORK_ID,
-    patternLabel: standard.pattern?.label.trim() || "振出",
-    note: withHolidayNote(record.note, SUBSTITUTE_WORK_NOTE),
+    patternId: SUBSTITUTE_WORK_ID,
+    patternLabel: "振出",
+    note: withHolidayNote(base.note, SUBSTITUTE_WORK_NOTE),
+  };
+}
+
+/** 振替休日: 勤務日を休みに入れ替え（公休○＋備考「振替休日」） */
+export function applySubstituteHoliday(record: DailyRecord): DailyRecord {
+  const base = clearSpecialDutyFlags(record);
+  return {
+    ...base,
+    ...clearedTimes(),
+    patternId: SUBSTITUTE_HOLIDAY_ID,
+    patternLabel: "振休",
+    koukyu: "○",
+    kekkin: "",
+    tokki: "",
+    yukyu: "",
+    note: withHolidayNote(base.note, SUBSTITUTE_HOLIDAY_NOTE),
   };
 }
 
