@@ -1,4 +1,20 @@
-import type { CustomShiftPattern, DayShiftSetting, EmploymentType, HalfDayRuleType, JobType, MonthlyAttendance, ShiftCode, StaffRole } from "@/types/kintai";
+import type {
+  CustomShiftPattern,
+  DayShiftSetting,
+  Department,
+  EmploymentType,
+  HalfDayRuleType,
+  JobType,
+  MonthlyAttendance,
+  ShiftCode,
+  StaffRole,
+  UserRole,
+} from "@/types/kintai";
+import {
+  defaultDepartmentForJobRole,
+  isDepartment,
+  isUserRole,
+} from "@/lib/access";
 import { presetForRole, recomputeScheduled, ROLE_LABEL } from "@/lib/schedule";
 import { defaultContractHours, defaultEmployment, defaultShiftPatterns, normalizePatterns } from "@/lib/shift-patterns";
 import { defaultClosing } from "@/lib/period";
@@ -8,7 +24,14 @@ import { parseAttendance } from "@/lib/storage";
 export interface StaffMember {
   id: string;
   name: string;
-  role: StaffRole;
+  /** アクセス権限 */
+  role: UserRole;
+  /** 所属科 */
+  department: Department;
+  /** 職種・勤務区分（シフトプリセット） */
+  jobRole: StaffRole;
+  /** 職種の表示名（未設定時は ROLE_LABEL[jobRole]） */
+  jobTitle?: string;
   halfDayRule: HalfDayRuleType;
   sheetType: JobType;
   initialPaidLeave: number;
@@ -22,6 +45,7 @@ export interface StaffMember {
 
 export const STAFF_LIST_KEY = "kintai_craft_staff_list_v1";
 export const CURRENT_STAFF_KEY = "kintai_craft_current_staff_id_v1";
+export const CURRENT_USER_KEY = "kintai_craft_current_user_id_v1";
 
 const LEGACY_NAME_KEY = "kintai-craft:staff";
 const LEGACY_JOB_KEY = "kintai-craft:job";
@@ -62,6 +86,15 @@ export function loadCurrentStaffId(): string | null {
 
 export function saveCurrentStaffId(staffId: string) {
   localStorage.setItem(CURRENT_STAFF_KEY, staffId);
+}
+
+export function loadCurrentUserId(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(CURRENT_USER_KEY);
+}
+
+export function saveCurrentUserId(userId: string) {
+  localStorage.setItem(CURRENT_USER_KEY, userId);
 }
 
 export function loadStaffRecords(staffId: string, year: number, month: number): MonthlyAttendance | null {
@@ -122,30 +155,111 @@ export function loadStaffMonth(
   };
 }
 
-export function ensureStaffWorkspace(): { staff: StaffMember[]; currentId: string } {
-  const existing = loadStaffList();
-  if (existing.length > 0) {
-    const raw = localStorage.getItem(STAFF_LIST_KEY) ?? "";
-    if (/AMパート|PMパート|AM半休|PM半休|\bAM\b|\bPM\b/.test(raw)) {
-      saveStaffList(existing);
-    }
-    const currentId = existing.some((staff) => staff.id === loadCurrentStaffId())
-      ? (loadCurrentStaffId() as string)
-      : existing[0].id;
-    saveCurrentStaffId(currentId);
-    return { staff: existing, currentId };
+export function ensureStaffWorkspace(): { staff: StaffMember[]; currentId: string; currentUserId: string } {
+  let existing = loadStaffList();
+  if (existing.length === 0) {
+    existing = [migrateLegacyStaff()];
   }
-  const staff = [migrateLegacyStaff()];
-  saveStaffList(staff);
-  saveCurrentStaffId(staff[0].id);
-  return { staff, currentId: staff[0].id };
+  existing = ensureDemoAccounts(existing);
+  saveStaffList(existing);
+
+  const raw = localStorage.getItem(STAFF_LIST_KEY) ?? "";
+  if (/AMパート|PMパート|AM半休|PM半休|\bAM\b|\bPM\b/.test(raw)) {
+    saveStaffList(existing);
+  }
+
+  const storedUser = loadCurrentUserId();
+  const currentUserId = existing.some((staff) => staff.id === storedUser) ? (storedUser as string) : pickDefaultUserId(existing);
+  saveCurrentUserId(currentUserId);
+
+  const storedStaff = loadCurrentStaffId();
+  const currentId = existing.some((staff) => staff.id === storedStaff) ? (storedStaff as string) : currentUserId;
+  saveCurrentStaffId(currentId);
+  return { staff: existing, currentId, currentUserId };
+}
+
+function pickDefaultUserId(staff: StaffMember[]): string {
+  return staff.find((item) => item.role === "admin")?.id ?? staff[0].id;
+}
+
+/** デモ切替用の利用者を不足分だけ追加（既存のテスト太郎等は壊さない） */
+function ensureDemoAccounts(staff: StaffMember[]): StaffMember[] {
+  const byId = new Map(staff.map((item) => [item.id, item]));
+  for (const seed of demoAccountSeeds()) {
+    if (!byId.has(seed.id)) {
+      byId.set(seed.id, seed);
+    }
+  }
+  return Array.from(byId.values());
+}
+
+function demoAccountSeeds(): StaffMember[] {
+  return [
+    buildSeedStaff({
+      id: "demo_yamada",
+      name: "山田",
+      role: "staff",
+      department: "rehabilitation",
+      jobRole: "pt_outpatient",
+      initialPaidLeave: 10,
+    }),
+    buildSeedStaff({
+      id: "demo_sato",
+      name: "佐藤",
+      role: "manager",
+      department: "rehabilitation",
+      jobRole: "pt_outpatient",
+      initialPaidLeave: 12,
+    }),
+    buildSeedStaff({
+      id: "demo_suzuki",
+      name: "鈴木",
+      role: "admin",
+      department: "office",
+      jobRole: "clerk",
+      initialPaidLeave: 15,
+    }),
+    buildSeedStaff({
+      id: "demo_tanaka",
+      name: "田中",
+      role: "staff",
+      department: "nursing",
+      jobRole: "nurse",
+      initialPaidLeave: 10,
+    }),
+  ];
+}
+
+function buildSeedStaff(input: {
+  id: string;
+  name: string;
+  role: UserRole;
+  department: Department;
+  jobRole: StaffRole;
+  initialPaidLeave: number;
+}): StaffMember {
+  const preset = presetForRole(input.jobRole);
+  const employmentType = defaultEmployment(input.jobRole);
+  return {
+    id: input.id,
+    name: input.name,
+    role: input.role,
+    department: input.department,
+    jobRole: input.jobRole,
+    halfDayRule: preset.halfDayRule,
+    sheetType: preset.sheetType,
+    initialPaidLeave: input.initialPaidLeave,
+    weeklySchedule: preset.weeklySchedule,
+    employmentType,
+    shiftPatterns: defaultShiftPatterns(input.jobRole, employmentType),
+  };
 }
 
 function migrateLegacyStaff(): StaffMember {
   const legacyJob: JobType = localStorage.getItem(LEGACY_JOB_KEY) === "rehab_part" ? "rehab_part" : "pt";
   const storedPattern = localStorage.getItem(LEGACY_PATTERN_KEY);
-  const role: StaffRole = storedPattern === "pattern_3" || legacyJob === "rehab_part" ? "rehab_assistant" : "pt_outpatient";
-  const preset = presetForRole(role);
+  const jobRole: StaffRole = storedPattern === "pattern_3" || legacyJob === "rehab_part" ? "rehab_assistant" : "pt_outpatient";
+  const preset = presetForRole(jobRole);
   let name = localStorage.getItem(LEGACY_NAME_KEY)?.trim() ?? "";
   let initialPaidLeave = 10;
   let latest = -1;
@@ -176,7 +290,9 @@ function migrateLegacyStaff(): StaffMember {
   return {
     id: "staff_1",
     name,
-    role: preset.role,
+    role: "admin",
+    department: defaultDepartmentForJobRole(preset.role),
+    jobRole: preset.role,
     halfDayRule: preset.halfDayRule,
     sheetType: preset.sheetType,
     initialPaidLeave,
@@ -198,18 +314,24 @@ function normalizeStaff(value: unknown): StaffMember | null {
   if (!value || typeof value !== "object") return null;
   const data = value as Record<string, unknown>;
   if (typeof data.id !== "string" || !data.id.trim()) return null;
-  const role = inferRole(data);
-  const preset = presetForRole(role);
+  const jobRole = inferJobRole(data);
+  const preset = presetForRole(jobRole);
   const halfDayRule = data.halfDayRule === "equal_4h" || data.halfDayRule === "asymmetric_3_5_4h" ? data.halfDayRule : preset.halfDayRule;
   const sheetType = data.sheetType === "pt" || data.sheetType === "rehab_part" ? data.sheetType : preset.sheetType;
-  const employmentType = normalizeEmployment(data.employmentType, role);
+  const employmentType = normalizeEmployment(data.employmentType, jobRole);
   const savedPatterns = Array.isArray(data.shiftPatterns) ? normalizePatterns(data.shiftPatterns) : null;
-  const shiftPatterns = savedPatterns ?? defaultShiftPatterns(role, employmentType);
+  const shiftPatterns = savedPatterns ?? defaultShiftPatterns(jobRole, employmentType);
   const contractHoursPerDay = normalizeHours(data.contractHoursPerDay);
+  const department = isDepartment(data.department) ? data.department : defaultDepartmentForJobRole(jobRole);
+  const role = inferAccessRole(data);
+  const jobTitle = typeof data.jobTitle === "string" && data.jobTitle.trim() ? data.jobTitle.trim() : undefined;
   return {
     id: data.id,
     name: typeof data.name === "string" ? data.name : "",
     role,
+    department,
+    jobRole,
+    jobTitle,
     halfDayRule,
     sheetType,
     initialPaidLeave: Number(data.initialPaidLeave) || 0,
@@ -234,16 +356,25 @@ function normalizeWage(value: unknown): number | undefined {
   return Math.round(wage);
 }
 
-function normalizeEmployment(value: unknown, role: StaffRole): EmploymentType {
+function normalizeEmployment(value: unknown, jobRole: StaffRole): EmploymentType {
   if (value === "full_time" || value === "short_time" || value === "part_time") return value;
-  return defaultEmployment(role);
+  return defaultEmployment(jobRole);
 }
 
-function inferRole(data: Record<string, unknown>): StaffRole {
+/** 旧データは role に職種が入っていた。新形式は jobRole + role(権限) */
+function inferJobRole(data: Record<string, unknown>): StaffRole {
+  if (typeof data.jobRole === "string" && data.jobRole in ROLE_LABEL) return data.jobRole as StaffRole;
   if (typeof data.role === "string" && data.role in ROLE_LABEL) return data.role as StaffRole;
   if (data.jobType === "rehab_part" || data.defaultPattern === "pattern_3") return "rehab_assistant";
   if (data.placement === "inpatient") return "pt_inpatient";
   return "pt_outpatient";
+}
+
+function inferAccessRole(data: Record<string, unknown>): UserRole {
+  if (isUserRole(data.accessRole)) return data.accessRole;
+  if (isUserRole(data.role) && !(data.role in ROLE_LABEL)) return data.role;
+  // 旧データは権限フィールドがない → 従来どおり全機能を使えるよう admin
+  return "admin";
 }
 
 function normalizeWeek(value: unknown, fallback: Record<number, DayShiftSetting>): Record<number, DayShiftSetting> {

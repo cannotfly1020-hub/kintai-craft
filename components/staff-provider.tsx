@@ -6,6 +6,7 @@ import {
   deleteStaffRecords,
   ensureStaffWorkspace,
   saveCurrentStaffId,
+  saveCurrentUserId,
   saveStaffList,
   type StaffMember,
 } from "@/lib/staff";
@@ -15,7 +16,9 @@ interface StaffContextValue {
   staffList: StaffMember[];
   currentStaffId: string | null;
   currentStaff: StaffMember | null;
+  currentUserId: string | null;
   selectStaff: (staffId: string) => void;
+  setCurrentUserId: (userId: string) => void;
   addStaff: (input: Omit<StaffMember, "id">) => StaffMember;
   updateStaff: (staffId: string, patch: Partial<Omit<StaffMember, "id">>) => void;
   removeStaff: (staffId: string) => void;
@@ -27,6 +30,7 @@ export function StaffProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [currentStaffId, setCurrentStaffId] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserIdState] = useState<string | null>(null);
 
   useEffect(() => {
     const workspace = ensureStaffWorkspace();
@@ -34,12 +38,18 @@ export function StaffProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate the staff list once
     setStaffList(workspace.staff);
     setCurrentStaffId(workspace.currentId);
+    setCurrentUserIdState(workspace.currentUserId);
     setReady(true);
   }, []);
 
   const selectStaff = useCallback((staffId: string) => {
     setCurrentStaffId(staffId);
     saveCurrentStaffId(staffId);
+  }, []);
+
+  const setCurrentUserId = useCallback((userId: string) => {
+    setCurrentUserIdState(userId);
+    saveCurrentUserId(userId);
   }, []);
 
   const updateStaff = useCallback((staffId: string, patch: Partial<Omit<StaffMember, "id">>) => {
@@ -50,7 +60,8 @@ export function StaffProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const addStaff = useCallback((input: Omit<StaffMember, "id">) => {
+  const addStaff = useCallback(
+    (input: Omit<StaffMember, "id">) => {
       const staff: StaffMember = { ...input, id: createStaffId(staffList) };
       const next = [...staffList, staff];
       setStaffList(next);
@@ -73,14 +84,41 @@ export function StaffProvider({ children }: { children: ReactNode }) {
         setCurrentStaffId(next[0].id);
         saveCurrentStaffId(next[0].id);
       }
+      if (currentUserId === staffId) {
+        const fallback = next.find((item) => item.role === "admin") ?? next[0];
+        setCurrentUserIdState(fallback.id);
+        saveCurrentUserId(fallback.id);
+      }
     },
-    [currentStaffId, staffList],
+    [currentStaffId, currentUserId, staffList],
   );
 
   const currentStaff = staffList.find((staff) => staff.id === currentStaffId) ?? null;
   const value = useMemo(
-    () => ({ ready, staffList, currentStaffId, currentStaff, selectStaff, addStaff, updateStaff, removeStaff }),
-    [ready, staffList, currentStaffId, currentStaff, selectStaff, addStaff, updateStaff, removeStaff],
+    () => ({
+      ready,
+      staffList,
+      currentStaffId,
+      currentStaff,
+      currentUserId,
+      selectStaff,
+      setCurrentUserId,
+      addStaff,
+      updateStaff,
+      removeStaff,
+    }),
+    [
+      ready,
+      staffList,
+      currentStaffId,
+      currentStaff,
+      currentUserId,
+      selectStaff,
+      setCurrentUserId,
+      addStaff,
+      updateStaff,
+      removeStaff,
+    ],
   );
 
   return <StaffContext.Provider value={value}>{children}</StaffContext.Provider>;

@@ -1,13 +1,25 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { StaffMember } from "@/lib/staff";
+import {
+  canEditStaffProfile,
+  canManageStaffDirectory,
+  canSwitchStaff,
+  DEPARTMENT_LABEL,
+  DEPARTMENTS,
+  defaultDepartmentForJobRole,
+  staffJobLabel,
+  USER_ROLE_LABEL,
+  USER_ROLES,
+} from "@/lib/access";
 import { HALF_RULE_LABEL, ROLE_LABEL, WEEKDAY_NAMES, dayFromPattern, dayFromShiftCode, holidayDay, presetForRole, recomputeScheduled } from "@/lib/schedule";
 import { blankPattern, defaultContractHours, defaultShiftPatterns, EMPLOYMENT_LABEL, patternButtonLabel, patternScheduledMinutes, SHIFT_PATTERN_LIMIT, withOvernight } from "@/lib/shift-patterns";
 import { JOB_LABEL, SHIFTS, shiftLabel, shiftsForJob } from "@/lib/shifts";
 import { formatHours } from "@/lib/time";
-import type { CustomShiftPattern, DayShiftSetting, EmploymentType, HalfDayRuleType, JobType, ShiftCode, StaffRole } from "@/types/kintai";
+import type { CustomShiftPattern, DayShiftSetting, Department, EmploymentType, HalfDayRuleType, JobType, ShiftCode, StaffRole, UserRole } from "@/types/kintai";
+import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,10 +42,20 @@ export function StaffBar({
   onUpdate: (staffId: string, input: Omit<StaffMember, "id">) => void;
   onDelete: (staffId: string) => void;
 }) {
+  const { currentUser, visibleStaff } = useAuth();
   const [draft, setDraft] = useState<StaffMember | null | "new">(null);
+  const [deptFilter, setDeptFilter] = useState<Department | "all">("all");
+  const canSwitch = currentUser ? canSwitchStaff(currentUser) : false;
+  const canManage = currentUser ? canManageStaffDirectory(currentUser) : false;
+  const canEdit = currentUser ? canEditStaffProfile(currentUser) : false;
+
+  const listed = useMemo(() => {
+    if (!currentUser || currentUser.role !== "admin" || deptFilter === "all") return visibleStaff;
+    return visibleStaff.filter((staff) => staff.department === deptFilter);
+  }, [currentUser, visibleStaff, deptFilter]);
 
   function removeCurrent() {
-    if (!currentStaff) return;
+    if (!currentStaff || !canManage) return;
     if (staffList.length <= 1) {
       window.alert("最後の職員は削除できません。");
       return;
@@ -45,33 +67,67 @@ export function StaffBar({
 
   return (
     <div className="flex w-full flex-wrap items-center gap-2 border-b border-border/70 pb-3">
-      <label className="flex items-center gap-2 text-sm">
-        <span className="font-medium">職員</span>
-        <select
-          aria-label="職員"
-          className={`${field} min-w-48`}
-          value={currentStaff?.id ?? ""}
-          onChange={(event) => onSelect(event.target.value)}
-        >
-          {staffList.map((staff) => (
-            <option key={staff.id} value={staff.id}>
-              {(staff.name.trim() || "氏名未設定") + `（${ROLE_LABEL[staff.role]}）`}
-            </option>
-          ))}
-        </select>
-      </label>
-      <p className="text-sm text-muted-foreground">
-        選択中: <span className="font-medium text-foreground">{currentStaff?.name.trim() || "氏名未設定"}</span>
-      </p>
-      <Button type="button" variant="outline" onClick={() => setDraft("new")}>
-        ＋ 職員を追加
-      </Button>
-      <Button type="button" variant="outline" onClick={() => currentStaff && setDraft(currentStaff)} disabled={!currentStaff}>
-        職員を編集
-      </Button>
-      <Button type="button" variant="outline" onClick={removeCurrent}>
-        職員を削除
-      </Button>
+      {canSwitch ? (
+        <label className="flex items-center gap-2 text-sm">
+          <span className="font-medium">職員</span>
+          <select
+            aria-label="職員"
+            className={`${field} min-w-48`}
+            value={currentStaff?.id ?? ""}
+            onChange={(event) => onSelect(event.target.value)}
+          >
+            {listed.map((staff) => (
+              <option key={staff.id} value={staff.id}>
+                {(staff.name.trim() || "氏名未設定") + `（${staffJobLabel(staff)} / ${DEPARTMENT_LABEL[staff.department]}）`}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <p className="text-sm">
+          <span className="font-medium">職員</span>{" "}
+          <span className="font-semibold text-foreground">{currentStaff?.name.trim() || "氏名未設定"}</span>
+          <span className="ml-1 text-muted-foreground">（本人のみ）</span>
+        </p>
+      )}
+      {canManage ? (
+        <label className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">科</span>
+          <select
+            aria-label="所属科で絞り込み"
+            className={`${field} min-w-36`}
+            value={deptFilter}
+            onChange={(event) => setDeptFilter(event.target.value as Department | "all")}
+          >
+            <option value="all">すべて</option>
+            {DEPARTMENTS.map((dept) => (
+              <option key={dept} value={dept}>
+                {DEPARTMENT_LABEL[dept]}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      {canSwitch ? (
+        <p className="text-sm text-muted-foreground">
+          選択中: <span className="font-medium text-foreground">{currentStaff?.name.trim() || "氏名未設定"}</span>
+        </p>
+      ) : null}
+      {canManage ? (
+        <Button type="button" variant="outline" onClick={() => setDraft("new")}>
+          ＋ 職員を追加
+        </Button>
+      ) : null}
+      {canEdit ? (
+        <Button type="button" variant="outline" onClick={() => currentStaff && setDraft(currentStaff)} disabled={!currentStaff}>
+          職員を編集
+        </Button>
+      ) : null}
+      {canManage ? (
+        <Button type="button" variant="outline" onClick={removeCurrent}>
+          職員を削除
+        </Button>
+      ) : null}
       {draft ? (
         <StaffForm
           key={draft === "new" ? "new" : draft.id}
@@ -98,16 +154,23 @@ function StaffForm({
   onSave: (input: Omit<StaffMember, "id">) => void;
 }) {
   const created = presetForRole("pt_outpatient");
-  const seed = initial ?? {
-    ...created,
+  const seed: Omit<StaffMember, "id"> = initial ?? {
     name: "",
+    role: "staff",
+    department: "rehabilitation",
+    jobRole: created.role,
+    halfDayRule: created.halfDayRule,
+    sheetType: created.sheetType,
+    weeklySchedule: created.weeklySchedule,
     initialPaidLeave: 10,
-    employmentType: "full_time" as const,
+    employmentType: "full_time",
     shiftPatterns: defaultShiftPatterns("pt_outpatient", "full_time"),
     contractHoursPerDay: undefined,
   };
   const [name, setName] = useState(initial?.name ?? "");
-  const [role, setRole] = useState<StaffRole>(seed.role);
+  const [accessRole, setAccessRole] = useState<UserRole>(seed.role);
+  const [department, setDepartment] = useState<Department>(seed.department);
+  const [jobRole, setJobRole] = useState<StaffRole>(seed.jobRole);
   const [halfDayRule, setHalfDayRule] = useState<HalfDayRuleType>(seed.halfDayRule);
   const [sheetType, setSheetType] = useState(seed.sheetType);
   const [paidLeave, setPaidLeave] = useState(String(seed.initialPaidLeave));
@@ -125,8 +188,9 @@ function StaffForm({
     setWeeklySchedule(linked);
   }
 
-  function changeRole(next: StaffRole) {
-    setRole(next);
+  function changeJobRole(next: StaffRole) {
+    setJobRole(next);
+    setDepartment(defaultDepartmentForJobRole(next));
     if (next === "custom") return;
     const preset = presetForRole(next);
     const patterns = defaultShiftPatterns(next, employmentType);
@@ -136,9 +200,9 @@ function StaffForm({
   }
 
   function changeEmployment(next: EmploymentType) {
-    const patterns = role === "custom" ? shiftPatterns : defaultShiftPatterns(role, next);
+    const patterns = jobRole === "custom" ? shiftPatterns : defaultShiftPatterns(jobRole, next);
     setEmploymentType(next);
-    if (role !== "custom") {
+    if (jobRole !== "custom") {
       setWeeklySchedule((current) => {
         const linked = assignPatternsToWeek(current, patterns);
         rememberedWork.current = rememberWorkDays(linked);
@@ -306,7 +370,7 @@ function StaffForm({
       putDay(index, { ...restored, isHoliday: false });
       return;
     }
-    const presetDay = presetForRole(role === "custom" ? "pt_outpatient" : role).weeklySchedule[index];
+    const presetDay = presetForRole(jobRole === "custom" ? "pt_outpatient" : jobRole).weeklySchedule[index];
     putDay(index, !presetDay.isHoliday && presetDay.shiftCode ? { ...presetDay } : dayFromShiftCode(sheetType === "pt" ? "B-2" : "7.5H"));
   }
 
@@ -324,7 +388,9 @@ function StaffForm({
     const contract = Number(contractHours);
     onSave({
       name: trimmed,
-      role,
+      role: accessRole,
+      department,
+      jobRole,
       halfDayRule,
       sheetType,
       initialPaidLeave: Number.isFinite(leave) && leave >= 0 ? leave : 0,
@@ -335,7 +401,7 @@ function StaffForm({
     });
   }
 
-  const shiftChoices = role === "custom" ? Object.values(SHIFTS) : shiftsForJob(sheetType);
+  const shiftChoices = jobRole === "custom" ? Object.values(SHIFTS) : shiftsForJob(sheetType);
 
   return createPortal(
     <div
@@ -362,9 +428,46 @@ function StaffForm({
             <Label htmlFor="new-staff-name">氏名（例: 山田 太郎）</Label>
             <Input id="new-staff-name" value={name} placeholder="山田 太郎" onChange={(event) => setName(event.target.value)} />
           </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-sm">
+              <Label htmlFor="new-staff-department">所属科</Label>
+              <select
+                id="new-staff-department"
+                className={field}
+                value={department}
+                onChange={(event) => setDepartment(event.target.value as Department)}
+              >
+                {DEPARTMENTS.map((item) => (
+                  <option key={item} value={item}>
+                    {DEPARTMENT_LABEL[item]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <Label htmlFor="new-staff-access-role">権限</Label>
+              <select
+                id="new-staff-access-role"
+                className={field}
+                value={accessRole}
+                onChange={(event) => setAccessRole(event.target.value as UserRole)}
+              >
+                {USER_ROLES.map((item) => (
+                  <option key={item} value={item}>
+                    {USER_ROLE_LABEL[item]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <label className="flex flex-col gap-1 text-sm">
             <Label htmlFor="new-staff-role">区分・職種</Label>
-            <select id="new-staff-role" className={field} value={role} onChange={(event) => changeRole(event.target.value as StaffRole)}>
+            <select
+              id="new-staff-role"
+              className={field}
+              value={jobRole}
+              onChange={(event) => changeJobRole(event.target.value as StaffRole)}
+            >
               {(Object.keys(ROLE_LABEL) as StaffRole[]).map((item) => (
                 <option key={item} value={item}>
                   {ROLE_LABEL[item]}
@@ -486,7 +589,7 @@ function StaffForm({
               ))}
             </select>
           </label>
-          {role === "custom" ? (
+          {jobRole === "custom" ? (
             <label className="flex flex-col gap-1 text-sm">
               <Label htmlFor="new-staff-sheet">出力シート</Label>
               <select

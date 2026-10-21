@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/components/auth-provider";
 import { LedgerTable } from "@/components/ledger-table";
 import { ScheduleBar } from "@/components/schedule-bar";
 import { StaffBar } from "@/components/staff-bar";
@@ -51,6 +52,7 @@ const offeredMonths = new Set<string>();
 
 export function AttendanceApp() {
   const { ready, staffList, currentStaff, selectStaff, addStaff, updateStaff, removeStaff } = useStaff();
+  const { currentUser, visibleStaff } = useAuth();
   const [attendance, setAttendance] = useState<MonthlyAttendance | null>(null);
   const [exporting, setExporting] = useState(false);
   const [notice, setNotice] = useState<{ tone: "error" | "ok"; text: string } | null>(null);
@@ -85,6 +87,14 @@ export function AttendanceApp() {
     commitAttendance(staff.id, applyWeeklySchedule(loaded.attendance, staff));
     setNotice({ tone: "ok", text: `${range} を週間設定で作成し、保存しました。` });
   }
+
+  useEffect(() => {
+    if (!ready || !currentUser || visibleStaff.length === 0) return;
+    if (currentStaff && visibleStaff.some((staff) => staff.id === currentStaff.id)) return;
+    selectStaff(visibleStaff[0].id);
+    // Keep the open ledger inside the logged-in user's visible set when the demo user changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- identity ids + visibleStaff drive the clamp
+  }, [ready, currentUser?.id, currentStaff?.id, visibleStaff, selectStaff]);
 
   useEffect(() => {
     if (!currentStaff) return;
@@ -300,13 +310,13 @@ export function AttendanceApp() {
 
       <main className="mx-auto flex max-w-[1440px] flex-col gap-4 px-4 py-6">
         <ScheduleBar
-          role={activeStaff.role}
+          role={activeStaff.jobRole}
           employmentType={activeStaff.employmentType}
           halfDayRule={activeStaff.halfDayRule}
           patterns={activeStaff.shiftPatterns}
           activePatternId={todayRecord?.patternId ?? ""}
           canApplyToday={Boolean(todayRecord)}
-          showAke={activeStaff.role === "nurse"}
+          showAke={activeStaff.jobRole === "nurse"}
           onApplyMonth={applyMonth}
           onApplyPattern={(pattern) => applyPattern(today, pattern)}
           onAke={() => {
@@ -386,7 +396,7 @@ export function AttendanceApp() {
             <div className="flex flex-col gap-2">
               <Label>区分・半休</Label>
               <p className="flex h-8 items-center text-sm">
-                {ROLE_LABEL[activeStaff.role]} · {HALF_RULE_LABEL[activeStaff.halfDayRule]}
+                {ROLE_LABEL[activeStaff.jobRole]} · {HALF_RULE_LABEL[activeStaff.halfDayRule]}
               </p>
               <p className="text-xs text-muted-foreground">
                 出力シート: {JOB_LABEL[attendance.jobType]}
@@ -459,8 +469,8 @@ export function AttendanceApp() {
           halfDayRule={activeStaff.halfDayRule}
           weeklySchedule={activeStaff.weeklySchedule}
           patterns={activeStaff.shiftPatterns}
-          showAllShifts={activeStaff.role === "custom"}
-          showAke={activeStaff.role === "nurse"}
+          showAllShifts={activeStaff.jobRole === "custom"}
+          showAke={activeStaff.jobRole === "nurse"}
           onRecord={updateRecord}
           onHalfMode={(date, mode) => setAttendance((current) => (current ? applyStaffDay(current, activeStaff, mode, date) : current))}
         />

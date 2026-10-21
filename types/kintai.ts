@@ -6,6 +6,13 @@ export type HalfDayType = "none" | "am" | "pm" | "am_off" | "pm_off";
 
 export type Placement = "outpatient" | "inpatient";
 
+/** アクセス権限（閲覧・管理範囲） */
+export type UserRole = "staff" | "manager" | "admin";
+
+/** 診療科・部門 */
+export type Department = "rehabilitation" | "nursing" | "radiology" | "office" | "other";
+
+/** 職種・勤務区分（シフトプリセット用） */
 export type StaffRole =
   | "pt_outpatient"
   | "pt_inpatient"

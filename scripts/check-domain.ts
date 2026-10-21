@@ -212,7 +212,9 @@ const migrated = normalizeStaffList([
 ]);
 assert.equal(migrated.length, 1);
 assert.equal(migrated[0].name, "佐藤 花子");
-assert.equal(migrated[0].role, "rehab_assistant");
+assert.equal(migrated[0].jobRole, "rehab_assistant");
+assert.equal(migrated[0].role, "admin");
+assert.equal(migrated[0].department, "rehabilitation");
 assert.equal(migrated[0].halfDayRule, "asymmetric_3_5_4h");
 assert.equal(migrated[0].sheetType, "rehab_part");
 assert.equal(migrated[0].initialPaidLeave, 8);
@@ -221,7 +223,8 @@ assert.equal(migrated[0].weeklySchedule[4].shiftCode, "D");
 assert.equal(migrated[0].weeklySchedule[4].scheduledMinutes, 240);
 
 const inpatient = normalizeStaffList([{ id: "staff_9", name: "入院", placement: "inpatient", initialPaidLeave: 3 }]);
-assert.equal(inpatient[0].role, "pt_inpatient");
+assert.equal(inpatient[0].jobRole, "pt_inpatient");
+assert.equal(inpatient[0].role, "admin");
 assert.equal(inpatient[0].halfDayRule, "equal_4h");
 assert.equal(inpatient[0].sheetType, "pt");
 assert.equal(inpatient[0].weeklySchedule[1].shiftCode, "B-2");
@@ -366,11 +369,15 @@ const keptWeek = normalizeStaffList([{ id: "staff_1", name: "テスト太郎", r
 assert.equal(keptWeek[0].employmentType, "full_time");
 assert.equal(keptWeek[0].contractHoursPerDay, undefined);
 assert.equal(keptWeek[0].hourlyWage, undefined);
+assert.equal(keptWeek[0].jobRole, "pt_outpatient");
+assert.equal(keptWeek[0].role, "admin");
 assert.equal(keptWeek[0].shiftPatterns[0].shiftCode, "B-2");
 const partNurse = normalizeStaffList([
   { id: "staff_4", name: "パート看護", role: "nurse", employmentType: "part_time", hourlyWage: 1400, initialPaidLeave: 3 },
 ]);
-assert.equal(partNurse[0].role, "nurse");
+assert.equal(partNurse[0].jobRole, "nurse");
+assert.equal(partNurse[0].department, "nursing");
+assert.equal(partNurse[0].role, "admin");
 assert.equal(partNurse[0].employmentType, "part_time");
 assert.equal(partNurse[0].sheetType, "rehab_part");
 assert.equal(partNurse[0].contractHoursPerDay, 4);
@@ -392,13 +399,13 @@ assert.equal(
 const partClerk = normalizeStaffList([
   { id: "staff_5", name: "パート事務", role: "clerk", employmentType: "full_time", initialPaidLeave: 3 },
 ]);
-assert.equal(partClerk[0].role, "clerk");
+assert.equal(partClerk[0].jobRole, "clerk");
 assert.equal(partClerk[0].employmentType, "full_time");
 assert.equal(partClerk[0].contractHoursPerDay, undefined);
 const partRadiology = normalizeStaffList([
   { id: "staff_6", name: "パート放射線", role: "radiologist", employmentType: "part_time", contractHoursPerDay: 7.5, initialPaidLeave: 2 },
 ]);
-assert.equal(partRadiology[0].role, "radiologist");
+assert.equal(partRadiology[0].jobRole, "radiologist");
 assert.equal(partRadiology[0].employmentType, "part_time");
 assert.equal(partRadiology[0].contractHoursPerDay, 7.5);
 assert.equal(keptWeek[0].weeklySchedule[4].shiftCode, "D");
@@ -440,7 +447,7 @@ const customStaff = normalizeStaffList([
     },
   },
 ]);
-assert.equal(customStaff[0].role, "custom");
+assert.equal(customStaff[0].jobRole, "custom");
 assert.equal(customStaff[0].weeklySchedule[1].breakMinutes, 90);
 assert.equal(customStaff[0].weeklySchedule[1].startTime, "08:30");
 assert.equal(customStaff[0].weeklySchedule[1].endTime, "18:00");
