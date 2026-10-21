@@ -1,0 +1,95 @@
+import { HALF_RULE_LABEL, ROLE_LABEL } from "@/lib/schedule";
+import { EMPLOYMENT_LABEL, patternButtonLabel } from "@/lib/shift-patterns";
+import type { CustomShiftPattern, EmploymentType, HalfDayRuleType, StaffRole } from "@/types/kintai";
+import { cn } from "@/lib/utils";
+
+export function ScheduleBar({
+  role,
+  employmentType,
+  halfDayRule,
+  patterns,
+  activePatternId,
+  canApplyToday,
+  onApplyMonth,
+  onApplyPattern,
+  onAke,
+  onLeave,
+}: {
+  role: StaffRole;
+  employmentType: EmploymentType;
+  halfDayRule: HalfDayRuleType;
+  patterns: CustomShiftPattern[];
+  activePatternId: string;
+  canApplyToday: boolean;
+  onApplyMonth: () => void;
+  onApplyPattern: (pattern: CustomShiftPattern) => void;
+  onAke: () => void;
+  onLeave: (kind: "koukyu" | "yukyu") => void;
+}) {
+  return (
+    <section className="rounded-xl bg-card p-3 ring-1 ring-foreground/10" aria-label="本日のシフト">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-xs text-muted-foreground">
+          {ROLE_LABEL[role]} · {EMPLOYMENT_LABEL[employmentType]} · {HALF_RULE_LABEL[halfDayRule]}
+        </p>
+        <button
+          type="button"
+          onClick={onApplyMonth}
+          className="ml-auto rounded-md border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
+        >
+          週間設定を1ヶ月分に反映
+        </button>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {patterns.map((pattern) => {
+          const selected = activePatternId === pattern.id;
+          return (
+            <button
+              key={pattern.id}
+              type="button"
+              aria-pressed={selected}
+              disabled={!canApplyToday}
+              onClick={() => onApplyPattern(pattern)}
+              className={cn(
+                "rounded-full border px-3 py-1.5 text-sm",
+                selected
+                  ? "border-sky-600 bg-sky-50 font-semibold text-sky-950 ring-2 ring-sky-600"
+                  : "border-border bg-background hover:bg-muted",
+              )}
+            >
+              {patternButtonLabel(pattern)}
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          aria-pressed={activePatternId === "ake"}
+          disabled={!canApplyToday}
+          onClick={onAke}
+          className="rounded-full border border-border bg-background px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
+        >
+          明け
+        </button>
+        <button
+          type="button"
+          disabled={!canApplyToday}
+          onClick={() => onLeave("koukyu")}
+          className="rounded-full border border-border bg-background px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
+        >
+          公休
+        </button>
+        <button
+          type="button"
+          disabled={!canApplyToday}
+          onClick={() => onLeave("yukyu")}
+          className="rounded-full border border-border bg-background px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
+        >
+          有休
+        </button>
+      </div>
+      {patterns.length === 0 ? (
+        <p className="mt-2 text-[11px] text-muted-foreground">職員の編集からマイ・シフトを登録できます。</p>
+      ) : null}
+    </section>
+  );
+}

@@ -15,7 +15,6 @@ import {
   editClocks,
   emptyRecord,
 } from "../lib/records";
-import { applyAttendanceMode, applyPatternToMonth, applyPatternToPeriod } from "../lib/patterns";
 import { applyStaffDay, applyWeeklySchedule, dayFromPattern, dayFromShiftCode, presetForRole, recomputeScheduled } from "../lib/schedule";
 import { defaultShiftPatterns, patternScheduledMinutes } from "../lib/shift-patterns";
 import { createStaffId, normalizeStaffList, recordsKey } from "../lib/staff";
@@ -197,78 +196,11 @@ assert.equal(thursday.dayOfWeek, "木");
 assert.equal(saturday.dayOfWeek, "土");
 assert.equal(sunday.dayOfWeek, "日");
 
-const pattern1Tuesday = applyAttendanceMode(tuesday, "pattern_1", "pt", "normal");
-assert.equal(pattern1Tuesday.shiftCode, "B-2");
-assert.equal(pattern1Tuesday.clockIn, "09:00");
-assert.equal(pattern1Tuesday.clockOut, "18:00");
-assert.equal(pattern1Tuesday.breakMinutes, 60);
-assert.equal(applyAttendanceMode(thursday, "pattern_1", "pt", "normal").shiftCode, "D");
-assert.equal(applyAttendanceMode(thursday, "pattern_1", "pt", "normal").clockOut, "12:30");
-assert.equal(applyAttendanceMode(sunday, "pattern_1", "pt", "normal").koukyu, "○");
-assert.equal(applyAttendanceMode(saturday, "pattern_2", "pt", "normal").koukyu, "○");
-assert.equal(applyAttendanceMode(tuesday, "pattern_2", "pt", "normal").shiftCode, "B-2");
-assert.equal(applyAttendanceMode(tuesday, "pattern_2", "pt", "normal").clockIn, "09:00");
-assert.equal(applyAttendanceMode(tuesday, "pattern_2", "pt", "normal").clockOut, "18:00");
-assert.equal(applyAttendanceMode(sunday, "pattern_2", "pt", "normal").koukyu, "○");
-assert.equal(applyAttendanceMode(sunday, "pattern_2", "pt", "normal").shiftCode, "");
-assert.equal(applyAttendanceMode(sunday, "pattern_2", "pt", "normal").clockIn, "");
-assert.equal(applyAttendanceMode(tuesday, "pattern_3", "rehab_part", "normal").shiftCode, "7.5H");
-assert.equal(applyAttendanceMode(tuesday, "pattern_3", "rehab_part", "normal").clockIn, "08:30");
-assert.equal(applyAttendanceMode(saturday, "pattern_3", "rehab_part", "normal").shiftCode, "D");
-assert.equal(applyAttendanceMode(sunday, "pattern_3", "rehab_part", "normal").koukyu, "○");
-
-const morningHalf = applyAttendanceMode(tuesday, "pattern_1", "pt", "pm");
-assert.equal(morningHalf.clockIn, "08:30");
-assert.equal(morningHalf.clockOut, "12:00");
-assert.equal(morningHalf.yukyu, "△");
-assert.equal(morningHalf.halfDayType, "pm");
-const afternoonHalf = applyAttendanceMode(tuesday, "pattern_3", "rehab_part", "am");
-assert.equal(afternoonHalf.clockIn, "13:00");
-assert.equal(afternoonHalf.clockOut, "17:00");
-assert.equal(afternoonHalf.yukyu, "△");
-assert.equal(afternoonHalf.shiftCode, "7.5H");
-const restored = applyAttendanceMode(afternoonHalf, "pattern_3", "rehab_part", "normal");
-assert.equal(restored.halfDayType, "none");
-assert.equal(restored.yukyu, "");
-assert.equal(restored.clockIn, "08:30");
-assert.equal(restored.clockOut, "17:00");
-
-const october = applyPatternToPeriod(
-  createAttendance({ year: 2026, month: 10, jobType: "pt", staffName: "一括" }),
-  "pattern_1",
-);
+const october = createAttendance({ year: 2026, month: 10, jobType: "pt", staffName: "一括" });
 assert.equal(october.records.length, 30);
 assert.equal(october.records[0].date, "2026-09-21");
 assert.equal(october.records.at(-1)?.date, "2026-10-20");
-const byDate = Object.fromEntries(october.records.map((record) => [record.date, record]));
-assert.equal(byDate["2026-10-19"].dayOfWeek, "月");
-assert.equal(byDate["2026-10-19"].shiftCode, "B-2");
-assert.equal(byDate["2026-10-19"].clockIn, "09:00");
-assert.equal(byDate["2026-10-19"].clockOut, "18:00");
-assert.equal(byDate["2026-10-19"].breakMinutes, 60);
-assert.equal(byDate["2026-10-15"].shiftCode, "D");
-assert.equal(byDate["2026-10-15"].clockIn, "08:30");
-assert.equal(byDate["2026-10-15"].clockOut, "12:30");
-assert.equal(byDate["2026-10-15"].breakMinutes, 0);
-assert.equal(byDate["2026-10-17"].shiftCode, "D");
-assert.equal(byDate["2026-10-18"].koukyu, "○");
-assert.equal(byDate["2026-10-18"].clockIn, "");
-assert.equal(byDate["2026-10-18"].shiftCode, "");
-const weekFive = applyPatternToPeriod(october, "pattern_2");
-assert.equal(weekFive.records.find((record) => record.date === "2026-10-16")?.shiftCode, "B-2");
-assert.equal(weekFive.records.find((record) => record.date === "2026-10-17")?.koukyu, "○");
-assert.equal(weekFive.records.find((record) => record.date === "2026-10-18")?.koukyu, "○");
-const rehabMonth = applyPatternToPeriod(
-  createAttendance({ year: 2026, month: 10, jobType: "rehab_part" }),
-  "pattern_3",
-);
-assert.equal(rehabMonth.records.find((record) => record.date === "2026-10-20")?.shiftCode, "7.5H");
-assert.equal(rehabMonth.records.find((record) => record.date === "2026-10-20")?.clockOut, "17:00");
-assert.equal(rehabMonth.records.find((record) => record.date === "2026-10-17")?.shiftCode, "D");
-const edited = applyPatternToMonth(october, "pattern_1", "pm", "2026-10-19");
-assert.equal(edited.records.find((record) => record.date === "2026-10-19")?.yukyu, "△");
-assert.equal(edited.records.find((record) => record.date === "2026-10-19")?.clockOut, "12:00");
-assert.equal(edited.records.find((record) => record.date === "2026-10-15")?.shiftCode, "D");
+assert.equal(october.records.find((record) => record.date === "2026-10-19")?.dayOfWeek, "月");
 
 assert.equal(recordsKey("staff_1", 2026, 11), "kintai_craft_records_staff_1_2026-11");
 assert.equal(createStaffId([]), "staff_1");

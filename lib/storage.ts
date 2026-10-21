@@ -1,9 +1,7 @@
 import type { JobType, MonthlyAttendance } from "@/types/kintai";
-import { isWorkPatternId, type WorkPatternId } from "@/lib/patterns";
 import { JOB_LABEL } from "@/lib/shifts";
 
 const STAFF_KEY = "kintai-craft:staff";
-const PATTERN_KEY = "kintai-craft:pattern";
 const JOB_KEY = "kintai-craft:job";
 
 export function draftKey(year: number, month: number, jobType: JobType): string {
@@ -23,16 +21,6 @@ export function loadStaffName(): string {
 
 export function saveStaffName(name: string) {
   localStorage.setItem(STAFF_KEY, name);
-}
-
-export function loadPatternId(): WorkPatternId | null {
-  if (typeof window === "undefined") return null;
-  const value = localStorage.getItem(PATTERN_KEY);
-  return isWorkPatternId(value) ? value : null;
-}
-
-export function savePatternId(patternId: WorkPatternId) {
-  localStorage.setItem(PATTERN_KEY, patternId);
 }
 
 export function loadJobType(): JobType {

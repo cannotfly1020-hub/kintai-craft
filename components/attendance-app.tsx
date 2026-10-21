@@ -4,11 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { toast } from "sonner";
 import { LedgerTable } from "@/components/ledger-table";
-import { ScheduleBar } from "@/components/pattern-bar";
+import { ScheduleBar } from "@/components/schedule-bar";
 import { StaffBar } from "@/components/staff-bar";
 import { useStaff } from "@/components/staff-provider";
 import { SummaryPanel } from "@/components/summary-panel";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,7 +17,6 @@ import { formatISODate } from "@/lib/date";
 import { HALF_RULE_LABEL, ROLE_LABEL, applyStaffDay, applyWeeklySchedule } from "@/lib/schedule";
 import { formatClosingTitle, formatPeriodLabel, defaultClosing, getPeriod, shiftClosing } from "@/lib/period";
 import { applyAke, applyHolidayDefaults, applyShiftPattern, chooseFullLeave, createAttendance } from "@/lib/records";
-import { patternButtonLabel } from "@/lib/shift-patterns";
 import { JOB_LABEL } from "@/lib/shifts";
 import { loadStaffMonth, saveStaffRecords, type StaffMember } from "@/lib/staff";
 import { attendanceFileName } from "@/lib/storage";
@@ -111,11 +109,6 @@ export function AttendanceApp() {
   const activeStaff = currentStaff;
   const today = formatISODate(new Date());
   const todayRecord = book.records.find((record) => record.date === today);
-  const halfMode: "normal" | "am" | "pm" | null = todayRecord
-    ? todayRecord.halfDayType === "am" || todayRecord.halfDayType === "pm"
-      ? todayRecord.halfDayType
-      : "normal"
-    : null;
 
   function openMonth(year: number, month: number) {
     showMonth(activeStaff, year, month, {
@@ -144,7 +137,7 @@ export function AttendanceApp() {
 
   function applyMonth() {
     const range = formatPeriodLabel(book.year, book.month);
-    const accepted = window.confirm(`当月の全記録（前月21日〜当月20日）を、この職員の週間設定で上書きしますか？\n${range}`);
+    const accepted = window.confirm(`この職員の曜日ごとの所定で、${range} を上書きしますか？`);
     if (!accepted) return;
     commitAttendance(activeStaff.id, applyWeeklySchedule(book, activeStaff));
     setNotice({ tone: "ok", text: `${range} を週間設定で反映し、保存しました。` });
@@ -171,16 +164,6 @@ export function AttendanceApp() {
     updateRecord(date, chooseFullLeave(record, kind, true));
     setNotice(null);
     scrollToDay(date);
-  }
-
-  function selectHalf(mode: "normal" | "am" | "pm") {
-    if (!book.records.some((record) => record.date === today)) {
-      setNotice({ tone: "ok", text: "この締め月に本日がないため、半休は入れていません。" });
-      return;
-    }
-    commitAttendance(activeStaff.id, applyStaffDay(book, activeStaff, mode, today));
-    setNotice(null);
-    scrollToDay(today);
   }
 
   async function download() {
@@ -315,12 +298,9 @@ export function AttendanceApp() {
           role={activeStaff.role}
           employmentType={activeStaff.employmentType}
           halfDayRule={activeStaff.halfDayRule}
-          weeklySchedule={activeStaff.weeklySchedule}
           patterns={activeStaff.shiftPatterns}
           activePatternId={todayRecord?.patternId ?? ""}
           canApplyToday={Boolean(todayRecord)}
-          halfMode={halfMode}
-          onHalf={selectHalf}
           onApplyMonth={applyMonth}
           onApplyPattern={(pattern) => applyPattern(today, pattern)}
           onAke={() => {
@@ -456,49 +436,6 @@ export function AttendanceApp() {
                 onChange={(event) => update({ lunchUnitPrice: Number(event.target.value) || 0 })}
                 onWheel={(event) => event.currentTarget.blur()}
               />
-            </div>
-
-            <div className="flex flex-col justify-end gap-2 md:col-span-2">
-              <p className="text-xs font-medium text-muted-foreground">本日のマイ・シフト</p>
-              <div className="flex flex-wrap gap-2">
-                <Badge variant="secondary">{formatPeriodLabel(attendance.year, attendance.month)}</Badge>
-                {activeStaff.shiftPatterns.map((pattern) => {
-                  const selected = todayRecord?.patternId === pattern.id;
-                  return (
-                    <button
-                      key={pattern.id}
-                      type="button"
-                      aria-pressed={selected}
-                      disabled={!todayRecord}
-                      onClick={() => applyPattern(today, pattern)}
-                      className={
-                        selected
-                          ? "rounded-full border border-sky-600 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-950 ring-2 ring-sky-600"
-                          : "rounded-full border border-border bg-background px-2.5 py-1 text-xs hover:bg-muted disabled:opacity-50"
-                      }
-                    >
-                      {patternButtonLabel(pattern)}
-                    </button>
-                  );
-                })}
-                <button
-                  type="button"
-                  aria-pressed={todayRecord?.shiftCode === "明け"}
-                  disabled={!todayRecord}
-                  onClick={() => todayRecord && updateRecord(today, applyAke(todayRecord))}
-                  className="rounded-full border border-border bg-background px-2.5 py-1 text-xs hover:bg-muted disabled:opacity-50"
-                >
-                  明け
-                </button>
-                <button
-                  type="button"
-                  disabled={!todayRecord}
-                  onClick={() => applyLeave(today, "koukyu")}
-                  className="rounded-full border border-border bg-background px-2.5 py-1 text-xs hover:bg-muted disabled:opacity-50"
-                >
-                  公休
-                </button>
-              </div>
             </div>
           </CardContent>
         </Card>

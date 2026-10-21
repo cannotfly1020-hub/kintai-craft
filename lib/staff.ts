@@ -1,5 +1,4 @@
 import type { CustomShiftPattern, DayShiftSetting, EmploymentType, HalfDayRuleType, JobType, MonthlyAttendance, ShiftCode, StaffRole } from "@/types/kintai";
-import { isWorkPatternId } from "@/lib/patterns";
 import { presetForRole, recomputeScheduled, ROLE_LABEL } from "@/lib/schedule";
 import { defaultEmployment, defaultShiftPatterns, normalizePatterns } from "@/lib/shift-patterns";
 import { defaultClosing } from "@/lib/period";
@@ -138,8 +137,7 @@ export function ensureStaffWorkspace(): { staff: StaffMember[]; currentId: strin
 function migrateLegacyStaff(): StaffMember {
   const legacyJob: JobType = localStorage.getItem(LEGACY_JOB_KEY) === "rehab_part" ? "rehab_part" : "pt";
   const storedPattern = localStorage.getItem(LEGACY_PATTERN_KEY);
-  const pattern = isWorkPatternId(storedPattern) ? storedPattern : legacyJob === "rehab_part" ? "pattern_3" : "pattern_1";
-  const role: StaffRole = pattern === "pattern_3" || legacyJob === "rehab_part" ? "rehab_assistant" : "pt_outpatient";
+  const role: StaffRole = storedPattern === "pattern_3" || legacyJob === "rehab_part" ? "rehab_assistant" : "pt_outpatient";
   const preset = presetForRole(role);
   let name = localStorage.getItem(LEGACY_NAME_KEY)?.trim() ?? "";
   let initialPaidLeave = 10;
