@@ -215,30 +215,51 @@ function StaffForm({
     });
   }
 
+  function applyPatternToDay(dayIndex: number, pattern: CustomShiftPattern) {
+    const next = dayFromPattern(pattern);
+    rememberedWork.current = { ...rememberedWork.current, [dayIndex]: { ...next } };
+    setWeeklySchedule((current) => ({ ...current, [dayIndex]: next }));
+  }
+
+  function applyPatternToWeekdays(pattern: CustomShiftPattern) {
+    const nextDay = dayFromPattern(pattern);
+    setWeeklySchedule((current) => {
+      const next = { ...current };
+      for (const dayIndex of [1, 2, 3, 4, 5]) {
+        next[dayIndex] = { ...nextDay };
+        rememberedWork.current = { ...rememberedWork.current, [dayIndex]: { ...nextDay } };
+      }
+      return next;
+    });
+  }
+
+  function setDayAsHoliday(dayIndex: number) {
+    setWeeklySchedule((current) => {
+      const prev = current[dayIndex];
+      if (prev && !prev.isHoliday && (prev.shiftCode || prev.startTime)) {
+        rememberedWork.current = { ...rememberedWork.current, [dayIndex]: { ...prev } };
+      }
+      return { ...current, [dayIndex]: holidayDay() };
+    });
+  }
+
   function handleSchedulePatternSelect(index: number, selectedValue: string) {
     if (!selectedValue) {
-      const cleared = holidayDay();
-      rememberedWork.current = { ...rememberedWork.current };
-      delete rememberedWork.current[index];
-      setWeeklySchedule((current) => ({ ...current, [index]: cleared }));
+      setDayAsHoliday(index);
       return;
     }
     if (selectedValue.startsWith("pattern:")) {
       const patternId = selectedValue.slice("pattern:".length);
       const pattern = shiftPatterns.find((item) => item.id === patternId);
       if (!pattern) return;
-      const next = dayFromPattern(pattern);
-      rememberedWork.current = { ...rememberedWork.current, [index]: { ...next } };
-      setWeeklySchedule((current) => ({ ...current, [index]: next }));
+      applyPatternToDay(index, pattern);
       return;
     }
     const fromPalette = shiftPatterns.find(
       (item) => item.id === selectedValue || item.label === selectedValue || (item.shiftCode.trim() || item.label.trim()) === selectedValue,
     );
     if (fromPalette) {
-      const next = dayFromPattern(fromPalette);
-      rememberedWork.current = { ...rememberedWork.current, [index]: { ...next } };
-      setWeeklySchedule((current) => ({ ...current, [index]: next }));
+      applyPatternToDay(index, fromPalette);
       return;
     }
     putDay(index, { ...dayFromShiftCode(selectedValue), patternId: "" });
@@ -500,7 +521,26 @@ function StaffForm({
             <p className="text-xs text-muted-foreground">出力シート: {JOB_LABEL[sheetType]}</p>
           )}
           <div className="flex flex-col gap-2">
-            <p className="text-sm font-medium">曜日ごとの所定</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-medium">曜日ごとの所定</p>
+              {shiftPatterns.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {shiftPatterns.map((pattern) => (
+                    <button
+                      key={`weekdays-${pattern.id}`}
+                      type="button"
+                      aria-label={`「${pattern.label.trim() || "無題"}」を月〜金に一括適用`}
+                      onClick={() => applyPatternToWeekdays(pattern)}
+                      className="rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs text-sky-800 hover:bg-sky-100"
+                    >
+                      「{pattern.label.trim() || "無題"}」を月〜金に一括適用
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">先にマイ・シフトを登録すると、ここから曜日へ反映できます。</p>
+              )}
+            </div>
             {WEEKDAY_NAMES.map((label, index) => {
               const day = weeklySchedule[index] ?? {
                 startTime: "",
@@ -511,73 +551,96 @@ function StaffForm({
                 isHoliday: true,
               };
               return (
-                <div key={label} className="grid grid-cols-[1.5rem_4.5rem_minmax(0,1fr)_minmax(0,1fr)_3.5rem_minmax(9.5rem,1.4fr)_2.75rem] items-center gap-1 text-xs">
-                  <span>{label}</span>
-                  <label className="flex items-center gap-1">
+                <div key={label} className="flex flex-col gap-1.5 rounded-lg border border-border/60 bg-muted/20 p-2">
+                  <div className="grid grid-cols-[1.5rem_4.5rem_minmax(0,1fr)_minmax(0,1fr)_3.5rem_minmax(9.5rem,1.4fr)_2.75rem] items-center gap-1 text-xs">
+                    <span>{label}</span>
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="checkbox"
+                        checked={day.isHoliday}
+                        onChange={(event) => toggleHoliday(index, event.target.checked)}
+                      />
+                      公休
+                    </label>
                     <input
-                      type="checkbox"
-                      checked={day.isHoliday}
-                      onChange={(event) => toggleHoliday(index, event.target.checked)}
+                      aria-label={`${label} 始業`}
+                      className={field}
+                      type="time"
+                      disabled={day.isHoliday}
+                      value={day.startTime}
+                      onChange={(event) => putDay(index, { startTime: event.target.value, isHoliday: false })}
                     />
-                    公休
-                  </label>
-                  <input
-                    aria-label={`${label} 始業`}
-                    className={field}
-                    type="time"
-                    disabled={day.isHoliday}
-                    value={day.startTime}
-                    onChange={(event) => putDay(index, { startTime: event.target.value, isHoliday: false })}
-                  />
-                  <input
-                    aria-label={`${label} 終業`}
-                    className={field}
-                    type="time"
-                    disabled={day.isHoliday}
-                    value={day.endTime}
-                    onChange={(event) => putDay(index, { endTime: event.target.value, isHoliday: false })}
-                  />
-                  <input
-                    aria-label={`${label} 休憩`}
-                    className={field}
-                    type="number"
-                    min={0}
-                    step={5}
-                    disabled={day.isHoliday}
-                    value={day.breakMinutes}
-                    onChange={(event) => putDay(index, { breakMinutes: Number(event.target.value) || 0, isHoliday: false })}
-                  />
-                  <select
-                    aria-label={`${label} シフト`}
-                    className={field}
-                    value={symbolValue(day)}
-                    onChange={(event) => handleSchedulePatternSelect(index, event.target.value)}
-                  >
-                    <option value="">--（公休 / 指定なし）</option>
+                    <input
+                      aria-label={`${label} 終業`}
+                      className={field}
+                      type="time"
+                      disabled={day.isHoliday}
+                      value={day.endTime}
+                      onChange={(event) => putDay(index, { endTime: event.target.value, isHoliday: false })}
+                    />
+                    <input
+                      aria-label={`${label} 休憩`}
+                      className={field}
+                      type="number"
+                      min={0}
+                      step={5}
+                      disabled={day.isHoliday}
+                      value={day.breakMinutes}
+                      onChange={(event) => putDay(index, { breakMinutes: Number(event.target.value) || 0, isHoliday: false })}
+                    />
+                    <select
+                      aria-label={`${label} シフト`}
+                      className={field}
+                      value={symbolValue(day)}
+                      onChange={(event) => handleSchedulePatternSelect(index, event.target.value)}
+                    >
+                      <option value="">--（公休 / 指定なし）</option>
+                      {shiftPatterns.map((pattern) => (
+                        <option key={pattern.id} value={`pattern:${pattern.id}`}>
+                          {patternButtonLabel(pattern)}
+                        </option>
+                      ))}
+                      {shiftChoices.length > 0 ? (
+                        <optgroup label="原本の時間帯">
+                          {shiftChoices.map((shift) => (
+                            <option key={shift.code} value={shift.code}>
+                              {shift.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ) : null}
+                      {day.shiftCode &&
+                      !matchPattern(day, shiftPatterns) &&
+                      !(day.patternId && shiftPatterns.some((pattern) => pattern.id === day.patternId)) &&
+                      !shiftChoices.some((shift) => shift.code === day.shiftCode) ? (
+                        <option value={day.shiftCode}>{shiftLabel(day.shiftCode)}</option>
+                      ) : null}
+                    </select>
+                    <span className="tabular-nums text-muted-foreground" aria-label={`${label} 所定`}>
+                      {day.isHoliday ? "0h" : `${formatHours(day.scheduledMinutes)}h`}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 pl-6">
                     {shiftPatterns.map((pattern) => (
-                      <option key={pattern.id} value={`pattern:${pattern.id}`}>
-                        {patternButtonLabel(pattern)}
-                      </option>
+                      <button
+                        key={`${label}-${pattern.id}`}
+                        type="button"
+                        aria-label={`${label}に${pattern.label.trim() || "無題"}を適用`}
+                        onClick={() => applyPatternToDay(index, pattern)}
+                        className="rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs text-sky-800 hover:bg-sky-100"
+                      >
+                        {pattern.label.trim() || "無題"} を適用
+                      </button>
                     ))}
-                    {shiftChoices.length > 0 ? (
-                      <optgroup label="原本の時間帯">
-                        {shiftChoices.map((shift) => (
-                          <option key={shift.code} value={shift.code}>
-                            {shift.label}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ) : null}
-                    {day.shiftCode &&
-                    !matchPattern(day, shiftPatterns) &&
-                    !(day.patternId && shiftPatterns.some((pattern) => pattern.id === day.patternId)) &&
-                    !shiftChoices.some((shift) => shift.code === day.shiftCode) ? (
-                      <option value={day.shiftCode}>{shiftLabel(day.shiftCode)}</option>
-                    ) : null}
-                  </select>
-                  <span className="tabular-nums text-muted-foreground" aria-label={`${label} 所定`}>
-                    {day.isHoliday ? "0h" : `${formatHours(day.scheduledMinutes)}h`}
-                  </span>
+                    <button
+                      type="button"
+                      aria-label={`${label}を公休にする`}
+                      onClick={() => setDayAsHoliday(index)}
+                      className="rounded-md border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
+                    >
+                      公休にする
+                    </button>
+                  </div>
                 </div>
               );
             })}
