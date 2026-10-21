@@ -42,7 +42,7 @@ function createSheet(workbook: ExcelJS.Workbook, job: JobType) {
   const sheet = workbook.addWorksheet(SHEET_NAME[job], {
     properties: { defaultRowHeight: 18 },
     pageSetup: {
-      paperSize: 8 as ExcelJS.PaperSize,
+      paperSize: 9 as ExcelJS.PaperSize,
       orientation: "landscape",
       fitToPage: true,
       fitToWidth: 1,

@@ -54,19 +54,23 @@ export function resolveJobSheet(workbook: ExcelJS.Workbook, job: JobType): { job
   throw new Error("原本に出力できるシートがありません");
 }
 
-function writeAttendance(workbook: ExcelJS.Workbook, attendance: MonthlyAttendance, hours?: HoursContext) {
+/** 原本ワークブックへ値のみ差し込む（テスト・拡張用）。 */
+export function writeAttendance(workbook: ExcelJS.Workbook, attendance: MonthlyAttendance, hours?: HoursContext) {
   const resolved = resolveJobSheet(workbook, attendance.jobType);
   const sheet = resolved.sheet;
   const columns = columnsFor(resolved.job);
   const summary = summarize(attendance, hours);
   const byDate = new Map(attendance.records.map((record) => [record.date, record]));
 
-  setValue(sheet, ERA_YEAR_CELL, reiwaYear(attendance.year));
-  setValue(sheet, MONTH_CELL, attendance.month);
-  setValue(sheet, NAME_CELL, attendance.staffName);
-  setValue(sheet, INITIAL_LEAVE_CELL, attendance.initialPaidLeave);
-  setValue(sheet, LUNCH_UNIT_CELL, attendance.lunchUnitPrice);
-  setValue(sheet, PERIOD_CELL, formatPeriodLabel(attendance.year, attendance.month));
+  ensurePrintSetup(sheet);
+
+  // ヘッダーは値のみ差し込み（罫線・フォント・結合は触らない）
+  writeCell(sheet.getCell(ERA_YEAR_CELL), reiwaYear(attendance.year));
+  writeCell(sheet.getCell(MONTH_CELL), attendance.month);
+  writeCell(sheet.getCell(NAME_CELL), attendance.staffName);
+  writeCell(sheet.getCell(INITIAL_LEAVE_CELL), attendance.initialPaidLeave);
+  writeCell(sheet.getCell(LUNCH_UNIT_CELL), attendance.lunchUnitPrice);
+  writeCell(sheet.getCell(PERIOD_CELL), formatPeriodLabel(attendance.year, attendance.month));
 
   const dates = getPeriod(attendance.year, attendance.month).dates;
   for (let index = 0; index < dates.length && index < 31; index += 1) {
@@ -74,36 +78,7 @@ function writeAttendance(workbook: ExcelJS.Workbook, attendance: MonthlyAttendan
     writeDailyRow(sheet, DATA_START_ROW + index, columns, record, resolved.job);
   }
 
-  const footer = footerStartRow();
-  const countRow = footer;
-  setNumber(sheet, countRow, columns.koukyu, summary.koukyu);
-  setNumber(sheet, countRow, columns.kekkin, summary.kekkin);
-  setNumber(sheet, countRow, columns.tokki, summary.tokki);
-  setNumber(sheet, countRow, columns.yukyu, summary.yukyu);
-  for (const shift of columns.shifts) {
-    setNumber(sheet, countRow, shift.col, summary.shifts[shift.code] ?? 0);
-  }
-
-  const totals = [
-    summary.paidLeaveRemaining,
-    overtimeLabel(summary.overtimeMinutes),
-    overtimeLabel(summary.shortageMinutes),
-    summary.attendanceDays,
-    summary.lunchCount,
-    summary.lunchAmount,
-    summary.lateEarlyCount,
-    summary.underHalfDayCount,
-    formatWorkedHoursLabel(summary.workedMinutes),
-    `${formatPaidLeaveHours(summary.paidLeaveMinutes)}（取得日数: ${formatDayCount(summary.yukyu)}日）`,
-    formatWorkedHoursLabel(summary.payableMinutes),
-  ];
-  totals.forEach((value, index) => {
-    setValue(sheet, sheet.getCell(footer + 1 + index, 3).address, value);
-  });
-
-  if (FOOTER_LABELS.length !== totals.length + 1) {
-    throw new Error("フッター行数が一致しません");
-  }
+  writeFooter(sheet, columns, summary);
 
   const selected = workbook.worksheets.findIndex((item) => item.name === sheet.name);
   if (selected >= 0) {
@@ -133,40 +108,106 @@ function writeDailyRow(
     columns.shortage,
     columns.note,
   ];
-  for (const col of writable) sheet.getCell(row, col).value = null;
+  for (const col of writable) clearValue(sheet.getCell(row, col));
   if (!record) return;
 
-  setValue(sheet, sheet.getCell(row, columns.day).address, record.dayOfMonth);
-  setValue(sheet, sheet.getCell(row, columns.dow).address, record.dayOfWeek);
-  setMark(sheet, row, columns.koukyu, record.koukyu);
-  setMark(sheet, row, columns.kekkin, record.kekkin);
-  setMark(sheet, row, columns.tokki, record.tokki);
-  setMark(sheet, row, columns.yukyu, record.yukyu);
+  writeCell(sheet.getCell(row, columns.day), record.dayOfMonth);
+  writeCell(sheet.getCell(row, columns.dow), record.dayOfWeek);
+  writeMark(sheet.getCell(row, columns.koukyu), record.koukyu);
+  writeMark(sheet.getCell(row, columns.kekkin), record.kekkin);
+  writeMark(sheet.getCell(row, columns.tokki), record.tokki);
+  writeMark(sheet.getCell(row, columns.yukyu), record.yukyu);
+
   const shiftMark = shiftMarkFor(record);
   const shiftCode = exportShiftCode(job, record);
   for (const shift of columns.shifts) {
-    setMark(sheet, row, shift.col, shiftCode === shift.code ? shiftMark : "");
+    writeMark(sheet.getCell(row, shift.col), shiftCode === shift.code ? shiftMark : "");
   }
+
   const span = splitOvertimeSpan(record.overtimeSpan);
-  setText(sheet, row, columns.otStart, span.start);
-  setText(sheet, row, columns.otEnd, span.end);
-  setText(sheet, row, columns.otText, overtimeLabel(record.overtimeMinutes));
-  setText(sheet, row, columns.shortage, record.shortageTime);
-  setText(sheet, row, columns.note, noteForExport(record, job));
+  writeCell(sheet.getCell(row, columns.otStart), span.start || null);
+  writeCell(sheet.getCell(row, columns.otEnd), span.end || null);
+  writeCell(sheet.getCell(row, columns.otText), overtimeLabel(record.overtimeMinutes) || null);
+  writeCell(sheet.getCell(row, columns.shortage), record.shortageTime || null);
+  writeCell(sheet.getCell(row, columns.note), noteForExport(record, job) || null);
 }
 
-function setMark(sheet: ExcelJS.Worksheet, row: number, col: number, mark: string) {
-  sheet.getCell(row, col).value = mark || null;
+function writeFooter(
+  sheet: ExcelJS.Worksheet,
+  columns: ReturnType<typeof columnsFor>,
+  summary: ReturnType<typeof summarize>,
+) {
+  const footer = footerStartRow();
+  const countRow = footer;
+
+  // 日数小計行：原本に COUNTIF 等があれば活かし、無ければ集計値を差し込む
+  writeNumberUnlessFormula(sheet.getCell(countRow, columns.koukyu), summary.koukyu);
+  writeNumberUnlessFormula(sheet.getCell(countRow, columns.kekkin), summary.kekkin);
+  writeNumberUnlessFormula(sheet.getCell(countRow, columns.tokki), summary.tokki);
+  writeNumberUnlessFormula(sheet.getCell(countRow, columns.yukyu), summary.yukyu);
+  for (const shift of columns.shifts) {
+    writeNumberUnlessFormula(sheet.getCell(countRow, shift.col), summary.shifts[shift.code] ?? 0);
+  }
+
+  const totals: ExcelJS.CellValue[] = [
+    summary.paidLeaveRemaining,
+    overtimeLabel(summary.overtimeMinutes) || "0分",
+    overtimeLabel(summary.shortageMinutes) || "0分",
+    summary.attendanceDays,
+    summary.lunchCount,
+    summary.lunchAmount,
+    summary.lateEarlyCount,
+    summary.underHalfDayCount,
+    formatWorkedHoursLabel(summary.workedMinutes),
+    `${formatPaidLeaveHours(summary.paidLeaveMinutes)}（取得日数: ${formatDayCount(summary.yukyu)}日）`,
+    formatWorkedHoursLabel(summary.payableMinutes),
+  ];
+
+  if (FOOTER_LABELS.length !== totals.length + 1) {
+    throw new Error("フッター行数が一致しません");
+  }
+
+  totals.forEach((value, index) => {
+    writeCell(sheet.getCell(footer + 1 + index, 3), value);
+  });
 }
 
-function setText(sheet: ExcelJS.Worksheet, row: number, col: number, value: string) {
-  sheet.getCell(row, col).value = value || null;
+/** A4横・1枚収容。原本の pageSetup を保ちつつ不足分だけ補う。 */
+function ensurePrintSetup(sheet: ExcelJS.Worksheet) {
+  const current = sheet.pageSetup ?? {};
+  sheet.pageSetup = {
+    ...current,
+    paperSize: (current.paperSize ?? 9) as ExcelJS.PaperSize,
+    orientation: current.orientation ?? "landscape",
+    fitToPage: true,
+    fitToWidth: current.fitToWidth ?? 1,
+    fitToHeight: current.fitToHeight ?? 1,
+    horizontalCentered: current.horizontalCentered ?? true,
+  };
 }
 
-function setNumber(sheet: ExcelJS.Worksheet, row: number, col: number, value: number) {
-  sheet.getCell(row, col).value = value;
+function hasFormula(cell: ExcelJS.Cell): boolean {
+  const value = cell.value;
+  if (!value || typeof value !== "object") return false;
+  return "formula" in value || "sharedFormula" in value;
 }
 
-function setValue(sheet: ExcelJS.Worksheet, address: string, value: ExcelJS.CellValue) {
-  sheet.getCell(address).value = value;
+/** 値だけ差し込む。border / fill / font / alignment / merge は変更しない。 */
+function writeCell(cell: ExcelJS.Cell, value: ExcelJS.CellValue) {
+  if (hasFormula(cell)) return;
+  cell.value = value;
+}
+
+function clearValue(cell: ExcelJS.Cell) {
+  if (hasFormula(cell)) return;
+  cell.value = null;
+}
+
+function writeMark(cell: ExcelJS.Cell, mark: string) {
+  writeCell(cell, mark || null);
+}
+
+function writeNumberUnlessFormula(cell: ExcelJS.Cell, value: number) {
+  if (hasFormula(cell)) return;
+  cell.value = value;
 }

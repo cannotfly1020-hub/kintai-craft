@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
 import { computeDeviation, noteForExport, paidLeaveMinutes, summarize } from "../lib/calc";
 import { holidayName } from "../lib/holidays";
-import { renderAttendance, renderAttendanceWorkbook, resolveJobSheet } from "../lib/excel/fill";
+import { renderAttendance, renderAttendanceWorkbook, resolveJobSheet, writeAttendance } from "../lib/excel/fill";
 import { createAttendanceTemplate } from "../lib/excel/template";
 import { SHEET_NAME } from "../lib/excel/layout";
+import { attendanceFileName } from "../lib/storage";
 import { getPeriod } from "../lib/period";
 import {
   chooseFullLeave,
@@ -728,6 +729,22 @@ assert.ok(partSheet);
 assert.equal(footerCell(partSheet, "勤務時間合計"), "4時間（4.0時間）");
 assert.equal(footerCell(partSheet, "有休時間合計"), "13.5時間（取得日数: 2.5日）");
 assert.equal(footerCell(partSheet, "支給対象時間"), "17時間30分（17.5時間）");
+
+assert.equal(sheet.pageSetup.paperSize, 9);
+assert.equal(sheet.pageSetup.orientation, "landscape");
+assert.equal(sheet.pageSetup.fitToPage, true);
+assert.equal(sheet.pageSetup.fitToWidth, 1);
+assert.equal(sheet.getCell(oct1Row, 7).font?.name, "游ゴシック");
+assert.equal(attendanceFileName({ year: 2026, month: 11, jobType: "pt", staffName: "テスト太郎" }), "出勤簿_テスト太郎_2026年11月分.xlsx");
+
+const formulaBook = createAttendanceTemplate();
+const formulaSheet = formulaBook.getWorksheet(SHEET_NAME.pt)!;
+formulaSheet.getCell(40, 3).value = { formula: "SUM(C8:C38)", result: 0 };
+const beforeFormula = formulaSheet.getCell(40, 3).value;
+writeAttendance(formulaBook, attendance);
+assert.deepEqual(formulaSheet.getCell(40, 3).value, beforeFormula);
+assert.equal(formulaSheet.getCell("C3").value, "テスト太郎");
+assert.equal(formulaSheet.getCell(oct1Row, 7).border?.left?.style, "thin");
 
 console.log("ok");
 }

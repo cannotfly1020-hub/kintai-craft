@@ -1,5 +1,4 @@
 import type { JobType, MonthlyAttendance } from "@/types/kintai";
-import { JOB_LABEL } from "@/lib/shifts";
 
 const STAFF_KEY = "kintai-craft:staff";
 const JOB_KEY = "kintai-craft:job";
@@ -10,8 +9,7 @@ export function draftKey(year: number, month: number, jobType: JobType): string 
 
 export function attendanceFileName(attendance: Pick<MonthlyAttendance, "year" | "month" | "jobType" | "staffName">): string {
   const name = attendance.staffName.replace(/[\\/:*?"<>|]/g, "").trim() || "氏名未設定";
-  const month = String(attendance.month).padStart(2, "0");
-  return `出勤簿_${JOB_LABEL[attendance.jobType]}_${name}_${attendance.year}${month}.xlsx`;
+  return `出勤簿_${name}_${attendance.year}年${attendance.month}月分.xlsx`;
 }
 
 export function loadStaffName(): string {
