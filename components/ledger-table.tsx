@@ -2,6 +2,7 @@ import { hasFullLeave } from "@/lib/calc";
 import { parseISODate } from "@/lib/date";
 import { holidayName } from "@/lib/holidays";
 import {
+  applyShiftPattern,
   chooseFullLeave,
   chooseHalf,
   chooseKekkin,
@@ -12,9 +13,11 @@ import {
   editShortage,
   resetAutomaticOvertime,
 } from "@/lib/records";
-import { describeShift, expectedDuty, shiftFor, shiftsForJob } from "@/lib/shifts";
-import { formatHours, formatMinutesJa } from "@/lib/time";
-import type { DailyRecord, HalfDayRuleType, JobType, LeaveMark, ShiftCode } from "@/types/kintai";
+import { dutyFromSetting } from "@/lib/schedule";
+import { contractFromRecord } from "@/lib/shift-patterns";
+import { SHIFTS, describeShift, expectedDuty, shiftFor, shiftsForJob, type DutyWindow } from "@/lib/shifts";
+import { formatHours, formatMinutesJa, scheduledWorkMinutes } from "@/lib/time";
+import type { CustomShiftPattern, DailyRecord, DayShiftSetting, HalfDayRuleType, JobType, LeaveMark, ShiftCode } from "@/types/kintai";
 import { cn } from "@/lib/utils";
 
 const field =
@@ -25,6 +28,9 @@ export function LedgerTable({
   records,
   scheduledMinutes,
   halfDayRule = "equal_4h",
+  weeklySchedule,
+  patterns = [],
+  showAllShifts = false,
   onRecord,
   onHalfMode,
 }: {
@@ -32,10 +38,13 @@ export function LedgerTable({
   records: DailyRecord[];
   scheduledMinutes?: number | null;
   halfDayRule?: HalfDayRuleType;
+  weeklySchedule?: Record<number, DayShiftSetting>;
+  patterns?: CustomShiftPattern[];
+  showAllShifts?: boolean;
   onRecord: (date: string, next: DailyRecord) => void;
   onHalfMode?: (date: string, mode: "normal" | "am" | "pm") => void;
 }) {
-  const shifts = shiftsForJob(jobType);
+  const shifts = showAllShifts ? Object.values(SHIFTS) : shiftsForJob(jobType);
   const today = new Date();
   const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
@@ -65,7 +74,11 @@ export function LedgerTable({
             const date = parseISODate(record.date);
             const holiday = holidayName(date);
             const shift = shiftFor(record.shiftCode);
-            const duty = shift ? expectedDuty(shift, record.halfDayType, scheduledMinutes) : null;
+            const stored = contractFromRecord(record);
+            const weekDuty = !stored && record.halfDayType === "none" ? dutyFromSetting(weeklySchedule?.[date.getDay()]) : null;
+            const contract = stored ?? weekDuty;
+            const duty = contract ?? (shift ? expectedDuty(shift, record.halfDayType, scheduledMinutes) : null);
+            const worked = scheduledWorkMinutes(record.clockIn, record.clockOut, record.breakMinutes);
             const suggestD =
               (record.dayOfWeek === "木" || record.dayOfWeek === "土") &&
               !record.shiftCode &&
@@ -171,10 +184,33 @@ export function LedgerTable({
                     ))}
                     <option value="free">自由</option>
                   </select>
+                  {record.patternLabel ? <p className="mt-1 text-[10px] font-medium">{record.patternLabel}</p> : null}
                   {duty?.start ? (
                     <p className="mt-1 text-[10px] text-muted-foreground">
-                      所定 {duty.start}–{duty.end} / {formatHours(duty.scheduledMinutes)}h
+                      所定 {duty.start}–{duty.overnight ? `翌${duty.end}` : duty.end} / {formatHours(duty.scheduledMinutes)}h
+                      {record.clockIn && record.clockOut ? ` · 実働 ${formatHours(worked)}h` : ""}
                     </p>
+                  ) : null}
+                  {patterns.length > 0 ? (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {patterns.map((pattern) => (
+                        <button
+                          key={pattern.id}
+                          type="button"
+                          aria-label={`${record.date} ${pattern.label || "シフト"}`}
+                          aria-pressed={record.patternId === pattern.id}
+                          onClick={() => onRecord(record.date, applyShiftPattern(record, pattern))}
+                          className={cn(
+                            "rounded-full border px-1.5 py-0.5 text-[10px]",
+                            record.patternId === pattern.id
+                              ? "border-sky-600 bg-sky-50 font-semibold text-sky-950"
+                              : "border-border bg-background hover:bg-muted",
+                          )}
+                        >
+                          {pattern.label || "無題"}
+                        </button>
+                      ))}
+                    </div>
                   ) : null}
                   {suggestD ? (
                     <button
@@ -186,8 +222,8 @@ export function LedgerTable({
                     </button>
                   ) : null}
                 </td>
-                <TimeCell label="出勤" record={record} field="clockIn" scheduledMinutes={scheduledMinutes} onRecord={onRecord} />
-                <TimeCell label="退勤" record={record} field="clockOut" scheduledMinutes={scheduledMinutes} onRecord={onRecord} />
+                <TimeCell label="出勤" record={record} field="clockIn" scheduledMinutes={scheduledMinutes} dutyOverride={contract} onRecord={onRecord} />
+                <TimeCell label="退勤" record={record} field="clockOut" scheduledMinutes={scheduledMinutes} dutyOverride={contract} onRecord={onRecord} />
                 <td className="px-2 py-1.5">
                   <input
                     aria-label={`${record.date} 休憩`}
@@ -197,7 +233,10 @@ export function LedgerTable({
                     step={5}
                     value={record.breakMinutes}
                     onChange={(event) =>
-                      onRecord(record.date, editClocks(record, { breakMinutes: Number(event.target.value) || 0 }, scheduledMinutes))
+                      onRecord(
+                        record.date,
+                        editClocks(record, { breakMinutes: Number(event.target.value) || 0 }, scheduledMinutes, contract),
+                      )
                     }
                     onWheel={(event) => event.currentTarget.blur()}
                   />
@@ -248,12 +287,14 @@ function TimeCell({
   record,
   field: key,
   scheduledMinutes,
+  dutyOverride,
   onRecord,
 }: {
   label: string;
   record: DailyRecord;
   field: "clockIn" | "clockOut";
   scheduledMinutes?: number | null;
+  dutyOverride?: DutyWindow | null;
   onRecord: (date: string, next: DailyRecord) => void;
 }) {
   return (
@@ -263,7 +304,7 @@ function TimeCell({
         className={cn(field, "w-[6.5rem] tabular-nums")}
         type="time"
         value={record[key]}
-        onChange={(event) => onRecord(record.date, editClocks(record, { [key]: event.target.value }, scheduledMinutes))}
+        onChange={(event) => onRecord(record.date, editClocks(record, { [key]: event.target.value }, scheduledMinutes, dutyOverride))}
       />
     </td>
   );
@@ -279,7 +320,8 @@ function OvertimeCell({
   onRecord: (date: string, next: DailyRecord) => void;
 }) {
   const knownShift = Boolean(shiftFor(record.shiftCode));
-  if (knownShift && !record.overtimeManual) {
+  const tracked = Boolean(record.contractStart && record.contractEnd);
+  if ((knownShift || tracked) && !record.overtimeManual) {
     return (
       <td className="px-2 py-1.5">
         <p className="text-xs tabular-nums">{record.overtimeSpan || "—"}</p>
@@ -316,7 +358,7 @@ function OvertimeCell({
         }
         onWheel={(event) => event.currentTarget.blur()}
       />
-      {knownShift ? (
+      {knownShift || tracked ? (
         <button
           type="button"
           className="mt-1 block text-[10px] text-primary underline-offset-2 hover:underline"

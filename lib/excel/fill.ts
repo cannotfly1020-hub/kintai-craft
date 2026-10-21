@@ -1,6 +1,6 @@
 import path from "node:path";
 import ExcelJS from "exceljs";
-import type { DailyRecord, MonthlyAttendance } from "@/types/kintai";
+import type { DailyRecord, JobType, MonthlyAttendance } from "@/types/kintai";
 import { noteForExport, overtimeLabel, shiftMarkFor, splitOvertimeSpan, summarize } from "@/lib/calc";
 import { formatISODate, reiwaYear } from "@/lib/date";
 import { createAttendanceTemplate } from "@/lib/excel/template";
@@ -39,13 +39,24 @@ export async function renderAttendanceWorkbook(attendance: MonthlyAttendance): P
   return Buffer.from(raw);
 }
 
-function writeAttendance(workbook: ExcelJS.Workbook, attendance: MonthlyAttendance) {
-  const sheet = workbook.getWorksheet(SHEET_NAME[attendance.jobType]);
-  if (!sheet) {
-    throw new Error(`シート「${SHEET_NAME[attendance.jobType]}」が原本にありません`);
+export function resolveJobSheet(workbook: ExcelJS.Workbook, job: JobType): { job: JobType; sheet: ExcelJS.Worksheet } {
+  const preferred = workbook.getWorksheet(SHEET_NAME[job]);
+  if (preferred) return { job, sheet: preferred };
+  const alternate: JobType = job === "pt" ? "rehab_part" : "pt";
+  const fallback = workbook.getWorksheet(SHEET_NAME[alternate]);
+  if (fallback) return { job: alternate, sheet: fallback };
+  const named = workbook.worksheets.find((sheet) => sheet.name === SHEET_NAME.pt || sheet.name === SHEET_NAME.rehab_part);
+  if (named) {
+    const matched: JobType = named.name === SHEET_NAME.pt ? "pt" : "rehab_part";
+    return { job: matched, sheet: named };
   }
+  throw new Error("原本に出力できるシートがありません");
+}
 
-  const columns = columnsFor(attendance.jobType);
+function writeAttendance(workbook: ExcelJS.Workbook, attendance: MonthlyAttendance) {
+  const resolved = resolveJobSheet(workbook, attendance.jobType);
+  const sheet = resolved.sheet;
+  const columns = columnsFor(resolved.job);
   const summary = summarize(attendance);
   const byDate = new Map(attendance.records.map((record) => [record.date, record]));
 

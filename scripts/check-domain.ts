@@ -1,19 +1,23 @@
 import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
-import { summarize } from "../lib/calc";
+import { computeDeviation, noteForExport, summarize } from "../lib/calc";
 import { holidayName } from "../lib/holidays";
-import { renderAttendance, renderAttendanceWorkbook } from "../lib/excel/fill";
+import { renderAttendance, renderAttendanceWorkbook, resolveJobSheet } from "../lib/excel/fill";
+import { createAttendanceTemplate } from "../lib/excel/template";
+import { SHEET_NAME } from "../lib/excel/layout";
 import { getPeriod } from "../lib/period";
 import {
   chooseFullLeave,
   chooseHalf,
+  applyShiftPattern,
   chooseShift,
   createAttendance,
   editClocks,
   emptyRecord,
 } from "../lib/records";
 import { applyAttendanceMode, applyPatternToMonth, applyPatternToPeriod } from "../lib/patterns";
-import { applyStaffDay, applyWeeklySchedule, presetForRole } from "../lib/schedule";
+import { applyStaffDay, applyWeeklySchedule, dayFromShiftCode, presetForRole, recomputeScheduled } from "../lib/schedule";
+import { defaultShiftPatterns, patternScheduledMinutes } from "../lib/shift-patterns";
 import { createStaffId, normalizeStaffList, recordsKey } from "../lib/staff";
 import { expectedDuty, SHIFTS } from "../lib/shifts";
 import { parseISODate } from "../lib/date";
@@ -151,19 +155,38 @@ assert.equal(oct5.yukyu, "△");
 assert.equal(oct5.clockIn, "13:30");
 assert.equal(oct5.clockOut, "18:00");
 assert.equal(oct5.overtimeMinutes, 0);
+assert.equal(oct6.shiftCode, "B-2");
 assert.equal(oct6.clockIn, "09:00");
-assert.equal(oct6.clockOut, "14:00");
-assert.equal(oct6.yukyu, "△");
+assert.equal(oct6.clockOut, "18:00");
+assert.equal(oct6.breakMinutes, 60);
+assert.equal(oct6.halfDayType, "none");
+assert.equal(oct6.koukyu, "");
+assert.equal(oct6.yukyu, "");
+const switched = chooseShift(chooseHalf(chooseShift(emptyRecord(new Date(2026, 9, 20)), "B-2"), "am"), "B-2");
+assert.equal(switched.clockIn, "09:00");
+assert.equal(switched.clockOut, "18:00");
+assert.equal(switched.breakMinutes, 60);
+assert.equal(switched.halfDayType, "none");
+const morning = chooseShift(switched, "D");
+assert.equal(morning.shiftCode, "D");
+assert.equal(morning.clockIn, "08:30");
+assert.equal(morning.clockOut, "12:30");
+assert.equal(morning.breakMinutes, 0);
+const part = chooseShift(morning, "7.5H");
+assert.equal(part.shiftCode, "7.5H");
+assert.equal(part.clockIn, "08:30");
+assert.equal(part.clockOut, "17:00");
+assert.equal(part.breakMinutes, 60);
 assert.equal(oct8.overtimeMinutes, 30);
 assert.equal(oct8.shortageTime, "0:30");
 
 const summary = summarize(attendance);
-assert.equal(summary.yukyu, 2);
-assert.equal(summary.paidLeaveRemaining, 10);
+assert.equal(summary.yukyu, 1.5);
+assert.equal(summary.paidLeaveRemaining, 10.5);
 assert.equal(summary.overtimeMinutes, 150);
 assert.equal(summary.lunchAmount, 1200);
 assert.equal(summary.lateEarlyCount, 1);
-assert.equal(summary.shifts["B-2"], 4);
+assert.equal(summary.shifts["B-2"], 4.5);
 
 const tuesday = emptyRecord(new Date(2026, 9, 20));
 const thursday = emptyRecord(new Date(2026, 9, 15));
@@ -270,6 +293,174 @@ assert.equal(inpatient[0].halfDayRule, "equal_4h");
 assert.equal(inpatient[0].sheetType, "pt");
 assert.equal(inpatient[0].weeklySchedule[1].shiftCode, "B-2");
 assert.equal(inpatient[0].weeklySchedule[1].scheduledMinutes, 480);
+assert.equal(inpatient[0].weeklySchedule[4].startTime, "09:00");
+assert.equal(inpatient[0].weeklySchedule[4].endTime, "18:00");
+assert.equal(inpatient[0].weeklySchedule[4].breakMinutes, 60);
+assert.equal(inpatient[0].weeklySchedule[4].shiftCode, "B-2");
+assert.equal(inpatient[0].weeklySchedule[4].isHoliday, false);
+assert.equal(inpatient[0].weeklySchedule[0].isHoliday, true);
+assert.equal(inpatient[0].weeklySchedule[0].startTime, "");
+assert.equal(inpatient[0].weeklySchedule[0].shiftCode, "");
+assert.equal(inpatient[0].weeklySchedule[6].isHoliday, true);
+assert.equal(inpatient[0].weeklySchedule[6].startTime, "");
+assert.equal(inpatient[0].weeklySchedule[6].shiftCode, "");
+assert.equal(presetForRole("pt_outpatient").weeklySchedule[4].shiftCode, "D");
+assert.equal(presetForRole("pt_outpatient").weeklySchedule[6].shiftCode, "D");
+assert.equal(presetForRole("rehab_assistant").halfDayRule, "asymmetric_3_5_4h");
+assert.equal(presetForRole("rehab_assistant").sheetType, "rehab_part");
+const nursePreset = presetForRole("nurse");
+assert.equal(nursePreset.halfDayRule, "equal_4h");
+assert.equal(nursePreset.sheetType, "rehab_part");
+assert.equal(nursePreset.weeklySchedule[1].shiftCode, "A-1");
+assert.equal(nursePreset.weeklySchedule[1].startTime, "08:30");
+assert.equal(nursePreset.weeklySchedule[1].endTime, "17:30");
+assert.equal(nursePreset.weeklySchedule[1].breakMinutes, 60);
+assert.equal(nursePreset.weeklySchedule[1].scheduledMinutes, 480);
+assert.equal(nursePreset.weeklySchedule[5].shiftCode, "A-1");
+assert.equal(nursePreset.weeklySchedule[0].isHoliday, true);
+assert.equal(nursePreset.weeklySchedule[6].isHoliday, true);
+for (const role of ["clerk", "radiologist"] as const) {
+  const preset = presetForRole(role);
+  assert.equal(preset.halfDayRule, "equal_4h");
+  assert.equal(preset.sheetType, "rehab_part");
+  assert.equal(preset.weeklySchedule[1].shiftCode, "A-1");
+  assert.equal(preset.weeklySchedule[1].endTime, "17:30");
+  assert.equal(preset.weeklySchedule[1].breakMinutes, 60);
+  assert.equal(preset.weeklySchedule[4].shiftCode, "D");
+  assert.equal(preset.weeklySchedule[4].startTime, "08:30");
+  assert.equal(preset.weeklySchedule[4].endTime, "12:30");
+  assert.equal(preset.weeklySchedule[4].breakMinutes, 0);
+  assert.equal(preset.weeklySchedule[5].shiftCode, "A-1");
+  assert.equal(preset.weeklySchedule[6].shiftCode, "D");
+  assert.equal(preset.weeklySchedule[0].isHoliday, true);
+}
+assert.equal(presetForRole("part_timer").halfDayRule, "equal_4h");
+const nurseStaff = { ...nursePreset, name: "看護", initialPaidLeave: 10 };
+const nurseMonth = applyWeeklySchedule(
+  createAttendance({ year: 2026, month: 10, jobType: "pt", staffName: "看護" }),
+  nurseStaff,
+);
+assert.equal(nurseMonth.jobType, "rehab_part");
+const nurseMonday = nurseMonth.records.find((record) => record.date === "2026-09-21");
+assert.equal(nurseMonday?.shiftCode, "A-1");
+assert.equal(nurseMonday?.clockIn, "08:30");
+assert.equal(nurseMonday?.clockOut, "17:30");
+assert.equal(nurseMonday?.breakMinutes, 60);
+const nursePm = applyStaffDay(nurseMonth, nurseStaff, "pm", "2026-09-21").records.find((record) => record.date === "2026-09-21");
+assert.equal(nursePm?.clockIn, "08:30");
+assert.equal(nursePm?.clockOut, "12:30");
+assert.equal(nursePm?.yukyu, "△");
+const nurseAm = applyStaffDay(nurseMonth, nurseStaff, "am", "2026-09-21").records.find((record) => record.date === "2026-09-21");
+assert.equal(nurseAm?.clockIn, "13:00");
+assert.equal(nurseAm?.clockOut, "17:00");
+const nurseFull = defaultShiftPatterns("nurse", "full_time");
+assert.equal(nurseFull[0].label, "日勤");
+assert.equal(nurseFull[0].startTime, "09:00");
+assert.equal(nurseFull[0].endTime, "18:00");
+assert.equal(patternScheduledMinutes(nurseFull[0]), 480);
+const night = nurseFull[1];
+assert.equal(night.label, "夜勤");
+assert.equal(night.startTime, "16:00");
+assert.equal(night.endTime, "09:00");
+assert.equal(night.isOvernight, true);
+assert.equal(patternScheduledMinutes(night), 960);
+const shortPatterns = defaultShiftPatterns("nurse", "short_time");
+assert.equal(shortPatterns[0].label, "時短");
+assert.equal(patternScheduledMinutes(shortPatterns[0]), 360);
+assert.equal(patternScheduledMinutes(shortPatterns[1]), 240);
+const partPatterns = defaultShiftPatterns("nurse", "part_time");
+assert.equal(partPatterns[0].label, "AMパート");
+assert.equal(partPatterns[0].startTime, "08:30");
+assert.equal(partPatterns[0].endTime, "12:30");
+assert.equal(partPatterns[0].breakMinutes, 0);
+assert.equal(patternScheduledMinutes(partPatterns[0]), 240);
+const shortDay = applyShiftPattern(emptyRecord(new Date(2026, 9, 21)), shortPatterns[0]);
+assert.equal(shortDay.clockIn, "09:00");
+assert.equal(shortDay.clockOut, "16:00");
+assert.equal(shortDay.breakMinutes, 60);
+assert.equal(shortDay.shiftCode, "free");
+assert.equal(shortDay.patternLabel, "時短");
+assert.equal(shortDay.overtimeMinutes, 0);
+assert.equal(shortDay.shortageTime, "");
+assert.equal(noteForExport(shortDay), "時短 09:00〜16:00");
+const shortLate = editClocks(shortDay, { clockOut: "16:30" });
+assert.equal(shortLate.overtimeMinutes, 30);
+assert.equal(shortLate.overtimeSpan, "16:00〜16:30");
+const nightDay = applyShiftPattern(emptyRecord(new Date(2026, 9, 21)), night);
+assert.equal(nightDay.clockIn, "16:00");
+assert.equal(nightDay.clockOut, "09:00");
+assert.equal(nightDay.isOvernight, true);
+assert.equal(nightDay.overtimeMinutes, 0);
+const nightLate = editClocks(nightDay, { clockOut: "09:30" });
+assert.equal(nightLate.overtimeMinutes, 30);
+assert.equal(nightLate.overtimeSpan, "09:00〜09:30");
+const nightEarlyOut = editClocks(nightDay, { clockOut: "08:30" });
+assert.equal(nightEarlyOut.shortageTime, "0:30");
+assert.deepEqual(computeDeviation("09:00", "19:30", "09:00", "18:00", 60, 60), {
+  overtimeMinutes: 90,
+  shortageMinutes: 0,
+  span: "18:00〜19:30",
+  startLabel: "18:00",
+  endLabel: "19:30",
+});
+const keptWeek = normalizeStaffList([{ id: "staff_1", name: "テスト太郎", role: "pt_outpatient", initialPaidLeave: 12 }]);
+assert.equal(keptWeek[0].employmentType, "full_time");
+assert.equal(keptWeek[0].shiftPatterns[0].shiftCode, "B-2");
+assert.equal(keptWeek[0].weeklySchedule[4].shiftCode, "D");
+assert.equal(keptWeek[0].weeklySchedule[1].startTime, "09:00");
+assert.equal(dayFromShiftCode("B-2").startTime, "09:00");
+assert.equal(dayFromShiftCode("B-2").endTime, "18:00");
+assert.equal(dayFromShiftCode("B-2").breakMinutes, 60);
+assert.equal(dayFromShiftCode("B-2").scheduledMinutes, 480);
+assert.equal(dayFromShiftCode("B-2").isHoliday, false);
+assert.equal(dayFromShiftCode("D").startTime, "08:30");
+assert.equal(dayFromShiftCode("D").endTime, "12:30");
+assert.equal(dayFromShiftCode("D").breakMinutes, 0);
+assert.equal(dayFromShiftCode("7.5H").endTime, "17:00");
+assert.equal(dayFromShiftCode("A-1").endTime, "17:30");
+assert.equal(dayFromShiftCode("").isHoliday, true);
+assert.equal(dayFromShiftCode("").startTime, "");
+assert.equal(dayFromShiftCode("").shiftCode, "");
+const longBreak = recomputeScheduled({
+  startTime: "08:30",
+  endTime: "18:00",
+  breakMinutes: 90,
+  scheduledMinutes: 0,
+  shiftCode: "B-2",
+  isHoliday: false,
+});
+assert.equal(longBreak.scheduledMinutes, 480);
+assert.equal(recomputeScheduled({ ...longBreak, isHoliday: true }).scheduledMinutes, 0);
+const customStaff = normalizeStaffList([
+  {
+    id: "staff_3",
+    name: "可変",
+    role: "custom",
+    halfDayRule: "equal_4h",
+    sheetType: "pt",
+    initialPaidLeave: 1,
+    weeklySchedule: {
+      1: { startTime: "08:30", endTime: "18:00", breakMinutes: 90, scheduledMinutes: 1, shiftCode: "B-2", isHoliday: false },
+      2: { startTime: "08:30", endTime: "17:30", breakMinutes: 60, scheduledMinutes: 1, shiftCode: "A-1", isHoliday: false },
+    },
+  },
+]);
+assert.equal(customStaff[0].role, "custom");
+assert.equal(customStaff[0].weeklySchedule[1].breakMinutes, 90);
+assert.equal(customStaff[0].weeklySchedule[1].startTime, "08:30");
+assert.equal(customStaff[0].weeklySchedule[1].endTime, "18:00");
+assert.equal(customStaff[0].weeklySchedule[1].scheduledMinutes, 480);
+assert.equal(customStaff[0].weeklySchedule[0].isHoliday, false);
+assert.equal(customStaff[0].weeklySchedule[0].startTime, "");
+const customMonth = applyWeeklySchedule(
+  createAttendance({ year: 2026, month: 10, jobType: "pt", staffName: "可変" }),
+  { ...customStaff[0], name: "可変" },
+);
+const customTuesday = customMonth.records.find((record) => record.date === "2026-10-20");
+assert.equal(customTuesday?.shiftCode, "A-1");
+assert.equal(customTuesday?.clockIn, "08:30");
+assert.equal(customTuesday?.clockOut, "17:30");
+assert.equal(customTuesday?.breakMinutes, 60);
 
 const ptStaff = { ...presetForRole("pt_outpatient"), name: "週間", initialPaidLeave: 10 };
 const scheduledMonth = applyWeeklySchedule(createAttendance({ year: 2026, month: 10, jobType: "pt", staffName: "週間" }), ptStaff);
@@ -371,6 +562,37 @@ assert.equal(reloadedSheet.getCell("A1").font?.bold, true);
 assert.equal(reloadedSheet.getCell("A8").border?.left?.style, "thin");
 assert.equal(reloadedSheet.getCell(oct1Row, 11).value, "1時間30分");
 assert.equal(reloadedSheet.getCell("C3").value, "テスト太郎");
+
+const missingPt = createAttendanceTemplate();
+const ptWorksheet = missingPt.getWorksheet(SHEET_NAME.pt);
+assert.ok(ptWorksheet);
+missingPt.removeWorksheet(ptWorksheet.id);
+const fallback = resolveJobSheet(missingPt, "pt");
+assert.equal(fallback.job, "rehab_part");
+assert.equal(fallback.sheet.name, SHEET_NAME.rehab_part);
+
+const nurseBuffer = await renderAttendanceWorkbook(nurseMonth);
+const nurseBook = new ExcelJS.Workbook();
+await nurseBook.xlsx.load(nurseBuffer as unknown as ArrayBuffer);
+const nurseSheet = nurseBook.getWorksheet(SHEET_NAME.rehab_part);
+assert.ok(nurseSheet);
+assert.equal(nurseSheet.getCell("C3").value, "看護");
+assert.equal(nurseSheet.getCell(8, 7).value, "○");
+
+const paletteMonth = {
+  ...nurseMonth,
+  staffName: "時短",
+  records: nurseMonth.records.map((record) =>
+    record.date === "2026-09-21" ? applyShiftPattern(record, shortPatterns[0]) : record,
+  ),
+};
+const paletteBuffer = await renderAttendanceWorkbook(paletteMonth);
+const paletteBook = new ExcelJS.Workbook();
+await paletteBook.xlsx.load(paletteBuffer as unknown as ArrayBuffer);
+const paletteSheet = paletteBook.getWorksheet(SHEET_NAME.rehab_part);
+assert.ok(paletteSheet);
+assert.equal(paletteSheet.getCell(8, 7).value, null);
+assert.equal(paletteSheet.getCell(8, 14).value, "時短 09:00〜16:00");
 
 console.log("ok");
 }

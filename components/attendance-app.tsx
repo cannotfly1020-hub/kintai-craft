@@ -17,11 +17,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { formatISODate } from "@/lib/date";
 import { HALF_RULE_LABEL, ROLE_LABEL, applyStaffDay, applyWeeklySchedule } from "@/lib/schedule";
 import { formatClosingTitle, formatPeriodLabel, defaultClosing, getPeriod, shiftClosing } from "@/lib/period";
-import { applyHolidayDefaults, createAttendance } from "@/lib/records";
-import { JOB_LABEL, shiftsForJob } from "@/lib/shifts";
+import { applyHolidayDefaults, applyShiftPattern, chooseFullLeave, chooseShift, createAttendance } from "@/lib/records";
+import { JOB_LABEL, SHIFTS, shiftsForJob } from "@/lib/shifts";
 import { loadStaffMonth, saveStaffRecords, type StaffMember } from "@/lib/staff";
 import { attendanceFileName } from "@/lib/storage";
-import type { DailyRecord, MonthlyAttendance } from "@/types/kintai";
+import type { CustomShiftPattern, DailyRecord, MonthlyAttendance, ShiftCode } from "@/types/kintai";
 
 const MONTH_ITEMS = Object.fromEntries(Array.from({ length: 12 }, (_, index) => [String(index + 1), `${index + 1}月`]));
 
@@ -106,9 +106,9 @@ export function AttendanceApp() {
   }
 
   const period = getPeriod(attendance.year, attendance.month);
-  const shifts = shiftsForJob(attendance.jobType);
   const book = attendance;
   const activeStaff = currentStaff;
+  const shifts = activeStaff.role === "custom" ? Object.values(SHIFTS) : shiftsForJob(attendance.jobType);
   const today = formatISODate(new Date());
   const todayRecord = book.records.find((record) => record.date === today);
   const halfMode: "normal" | "am" | "pm" | null = todayRecord
@@ -149,6 +149,39 @@ export function AttendanceApp() {
     commitAttendance(activeStaff.id, applyWeeklySchedule(book, activeStaff));
     setNotice({ tone: "ok", text: `${range} を週間設定で反映し、保存しました。` });
     scrollToDay(today);
+  }
+
+  function applyShift(code: ShiftCode) {
+    const record = book.records.find((item) => item.date === today);
+    if (!record) {
+      setNotice({ tone: "ok", text: "この締め月に本日がないため、勤務記号は入れていません。" });
+      return;
+    }
+    updateRecord(today, chooseShift(record, code));
+    setNotice(null);
+    scrollToDay(today);
+  }
+
+  function applyPattern(date: string, pattern: CustomShiftPattern) {
+    const record = book.records.find((item) => item.date === date);
+    if (!record) {
+      setNotice({ tone: "ok", text: "この締め月にその日がないため、シフトは入れていません。" });
+      return;
+    }
+    updateRecord(date, applyShiftPattern(record, pattern));
+    setNotice(null);
+    scrollToDay(date);
+  }
+
+  function applyLeave(date: string, kind: "koukyu" | "yukyu") {
+    const record = book.records.find((item) => item.date === date);
+    if (!record) {
+      setNotice({ tone: "ok", text: "この締め月にその日がないため、休暇は入れていません。" });
+      return;
+    }
+    updateRecord(date, chooseFullLeave(record, kind, true));
+    setNotice(null);
+    scrollToDay(date);
   }
 
   function selectHalf(mode: "normal" | "am" | "pm") {
@@ -291,11 +324,17 @@ export function AttendanceApp() {
       <main className="mx-auto flex max-w-[1440px] flex-col gap-4 px-4 py-6">
         <ScheduleBar
           role={activeStaff.role}
+          employmentType={activeStaff.employmentType}
           halfDayRule={activeStaff.halfDayRule}
           weeklySchedule={activeStaff.weeklySchedule}
+          patterns={activeStaff.shiftPatterns}
+          activePatternId={todayRecord?.patternId ?? ""}
+          canApplyToday={Boolean(todayRecord)}
           halfMode={halfMode}
           onHalf={selectHalf}
           onApplyMonth={applyMonth}
+          onApplyPattern={(pattern) => applyPattern(today, pattern)}
+          onLeave={(kind) => applyLeave(today, kind)}
         />
         <Card>
           <CardHeader>
@@ -358,7 +397,7 @@ export function AttendanceApp() {
                 {ROLE_LABEL[activeStaff.role]} · {HALF_RULE_LABEL[activeStaff.halfDayRule]}
               </p>
               <p className="text-xs text-muted-foreground">
-                出力シート: {attendance.jobType === "pt" ? "理学療法士" : "リハビリフルタイムパート"}
+                出力シート: {JOB_LABEL[attendance.jobType]}
               </p>
             </div>
 
@@ -421,13 +460,27 @@ export function AttendanceApp() {
             </div>
 
             <div className="flex flex-col justify-end gap-2 md:col-span-2">
+              <p className="text-xs font-medium text-muted-foreground">本日の勤務記号</p>
               <div className="flex flex-wrap gap-2">
                 <Badge variant="secondary">{formatPeriodLabel(attendance.year, attendance.month)}</Badge>
-                {shifts.map((shift) => (
-                  <Badge key={shift.code} variant="outline">
-                    {shift.label} {shift.start}–{shift.end}
-                  </Badge>
-                ))}
+                {shifts.map((shift) => {
+                  const selected = todayRecord?.shiftCode === shift.code && todayRecord.halfDayType === "none" && !todayRecord.koukyu;
+                  return (
+                    <button
+                      key={shift.code}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => applyShift(shift.code)}
+                      className={
+                        selected
+                          ? "rounded-full border border-sky-600 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-950 ring-2 ring-sky-600"
+                          : "rounded-full border border-border bg-background px-2.5 py-1 text-xs hover:bg-muted"
+                      }
+                    >
+                      {shift.label} {shift.start} / {shift.end}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </CardContent>
@@ -437,6 +490,9 @@ export function AttendanceApp() {
           jobType={attendance.jobType}
           records={attendance.records}
           halfDayRule={activeStaff.halfDayRule}
+          weeklySchedule={activeStaff.weeklySchedule}
+          patterns={activeStaff.shiftPatterns}
+          showAllShifts={activeStaff.role === "custom"}
           onRecord={updateRecord}
           onHalfMode={(date, mode) => setAttendance((current) => (current ? applyStaffDay(current, activeStaff, mode, date) : current))}
         />

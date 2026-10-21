@@ -1,21 +1,35 @@
 import { HALF_RULE_LABEL, ROLE_LABEL, WEEKDAY_NAMES } from "@/lib/schedule";
-import type { DayShiftSetting, HalfDayRuleType, StaffRole } from "@/types/kintai";
+import { EMPLOYMENT_LABEL } from "@/lib/shift-patterns";
+import { crossesMidnight } from "@/lib/time";
+import type { CustomShiftPattern, DayShiftSetting, EmploymentType, HalfDayRuleType, StaffRole } from "@/types/kintai";
 import { cn } from "@/lib/utils";
 
 export function ScheduleBar({
   role,
+  employmentType,
   halfDayRule,
   weeklySchedule,
+  patterns,
+  activePatternId,
+  canApplyToday,
   halfMode,
   onHalf,
   onApplyMonth,
+  onApplyPattern,
+  onLeave,
 }: {
   role: StaffRole;
+  employmentType: EmploymentType;
   halfDayRule: HalfDayRuleType;
   weeklySchedule: Record<number, DayShiftSetting>;
+  patterns: CustomShiftPattern[];
+  activePatternId: string;
+  canApplyToday: boolean;
   halfMode: "normal" | "am" | "pm" | null;
   onHalf: (mode: "normal" | "am" | "pm") => void;
   onApplyMonth: () => void;
+  onApplyPattern: (pattern: CustomShiftPattern) => void;
+  onLeave: (kind: "koukyu" | "yukyu") => void;
 }) {
   const halves =
     halfDayRule === "asymmetric_3_5_4h"
@@ -35,7 +49,9 @@ export function ScheduleBar({
       <div className="flex flex-col gap-3">
         <div>
           <p className="text-sm font-semibold">{ROLE_LABEL[role]}</p>
-          <p className="text-xs text-muted-foreground">{HALF_RULE_LABEL[halfDayRule]}</p>
+          <p className="text-xs text-muted-foreground">
+            {EMPLOYMENT_LABEL[employmentType]} · {HALF_RULE_LABEL[halfDayRule]}
+          </p>
           <div className="mt-2 grid grid-cols-7 gap-1 text-[11px]">
             {WEEKDAY_NAMES.map((name, index) => {
               const day = weeklySchedule[index];
@@ -54,6 +70,49 @@ export function ScheduleBar({
           >
             1ヶ月分を一括反映
           </button>
+        </div>
+        <div>
+          <p className="mb-2 text-xs font-medium text-muted-foreground">本日のマイ・シフト</p>
+          <div className="flex flex-wrap gap-2">
+            {patterns.map((pattern) => {
+              const selected = activePatternId === pattern.id;
+              const end = crossesMidnight(pattern.startTime, pattern.endTime) ? `翌${pattern.endTime}` : pattern.endTime;
+              return (
+                <button
+                  key={pattern.id}
+                  type="button"
+                  aria-pressed={selected}
+                  disabled={!canApplyToday}
+                  onClick={() => onApplyPattern(pattern)}
+                  className={cn(
+                    "rounded-full border px-3 py-1.5 text-left text-xs",
+                    selected
+                      ? "border-sky-600 bg-sky-50 font-semibold text-sky-950 ring-2 ring-sky-600"
+                      : "border-border bg-background hover:bg-muted",
+                  )}
+                >
+                  {pattern.label || "無題"} ({pattern.startTime}–{end})
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              disabled={!canApplyToday}
+              onClick={() => onLeave("koukyu")}
+              className="rounded-full border border-border bg-background px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-50"
+            >
+              公休
+            </button>
+            <button
+              type="button"
+              disabled={!canApplyToday}
+              onClick={() => onLeave("yukyu")}
+              className="rounded-full border border-border bg-background px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-50"
+            >
+              有休
+            </button>
+          </div>
+          {patterns.length === 0 ? <p className="mt-1 text-[11px] text-muted-foreground">職員の編集からシフトを登録できます。</p> : null}
         </div>
         <div>
           <p className="mb-2 text-xs font-medium text-muted-foreground">本日の半休</p>

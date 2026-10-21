@@ -1,6 +1,7 @@
-import type { DayShiftSetting, HalfDayRuleType, JobType, MonthlyAttendance, ShiftCode, StaffRole } from "@/types/kintai";
+import type { CustomShiftPattern, DayShiftSetting, EmploymentType, HalfDayRuleType, JobType, MonthlyAttendance, ShiftCode, StaffRole } from "@/types/kintai";
 import { isWorkPatternId } from "@/lib/patterns";
-import { presetForRole, recomputeScheduled } from "@/lib/schedule";
+import { presetForRole, recomputeScheduled, ROLE_LABEL } from "@/lib/schedule";
+import { defaultEmployment, defaultShiftPatterns, normalizePatterns } from "@/lib/shift-patterns";
 import { defaultClosing } from "@/lib/period";
 import { createAttendance } from "@/lib/records";
 import { parseAttendance } from "@/lib/storage";
@@ -13,6 +14,8 @@ export interface StaffMember {
   sheetType: JobType;
   initialPaidLeave: number;
   weeklySchedule: Record<number, DayShiftSetting>;
+  employmentType: EmploymentType;
+  shiftPatterns: CustomShiftPattern[];
 }
 
 export const STAFF_LIST_KEY = "kintai_craft_staff_list_v1";
@@ -173,6 +176,8 @@ function migrateLegacyStaff(): StaffMember {
     sheetType: preset.sheetType,
     initialPaidLeave,
     weeklySchedule: preset.weeklySchedule,
+    employmentType: defaultEmployment(preset.role),
+    shiftPatterns: defaultShiftPatterns(preset.role, defaultEmployment(preset.role)),
   };
 }
 
@@ -192,6 +197,8 @@ function normalizeStaff(value: unknown): StaffMember | null {
   const preset = presetForRole(role);
   const halfDayRule = data.halfDayRule === "equal_4h" || data.halfDayRule === "asymmetric_3_5_4h" ? data.halfDayRule : preset.halfDayRule;
   const sheetType = data.sheetType === "pt" || data.sheetType === "rehab_part" ? data.sheetType : preset.sheetType;
+  const employmentType = normalizeEmployment(data.employmentType, role);
+  const savedPatterns = Array.isArray(data.shiftPatterns) ? normalizePatterns(data.shiftPatterns) : null;
   return {
     id: data.id,
     name: typeof data.name === "string" ? data.name : "",
@@ -200,13 +207,18 @@ function normalizeStaff(value: unknown): StaffMember | null {
     sheetType,
     initialPaidLeave: Number(data.initialPaidLeave) || 0,
     weeklySchedule: normalizeWeek(data.weeklySchedule, preset.weeklySchedule),
+    employmentType,
+    shiftPatterns: savedPatterns ?? defaultShiftPatterns(role, employmentType),
   };
 }
 
+function normalizeEmployment(value: unknown, role: StaffRole): EmploymentType {
+  if (value === "full_time" || value === "short_time" || value === "part_time") return value;
+  return defaultEmployment(role);
+}
+
 function inferRole(data: Record<string, unknown>): StaffRole {
-  if (data.role === "pt_outpatient" || data.role === "pt_inpatient" || data.role === "rehab_assistant" || data.role === "part_timer") {
-    return data.role;
-  }
+  if (typeof data.role === "string" && data.role in ROLE_LABEL) return data.role as StaffRole;
   if (data.jobType === "rehab_part" || data.defaultPattern === "pattern_3") return "rehab_assistant";
   if (data.placement === "inpatient") return "pt_inpatient";
   return "pt_outpatient";

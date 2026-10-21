@@ -1,10 +1,25 @@
-import type { DailyRecord, HalfDayType, JobType, LeaveMark, MonthlyAttendance, ShiftCode } from "@/types/kintai";
+import type { CustomShiftPattern, DailyRecord, HalfDayType, JobType, LeaveMark, MonthlyAttendance, ShiftCode } from "@/types/kintai";
 import { computeDeviation } from "@/lib/calc";
 import { formatISODate, weekdayLabel } from "@/lib/date";
 import { isPublicRestDay } from "@/lib/holidays";
 import { getPeriod } from "@/lib/period";
-import { expectedDuty, shiftFor } from "@/lib/shifts";
+import { contractFromRecord, dutyFromPattern } from "@/lib/shift-patterns";
+import { expectedDuty, shiftFor, type DutyWindow } from "@/lib/shifts";
 import { formatShortage } from "@/lib/time";
+
+export function emptyPatternFields(): Pick<
+  DailyRecord,
+  "patternId" | "patternLabel" | "contractStart" | "contractEnd" | "contractBreak" | "isOvernight"
+> {
+  return {
+    patternId: "",
+    patternLabel: "",
+    contractStart: "",
+    contractEnd: "",
+    contractBreak: 0,
+    isOvernight: false,
+  };
+}
 
 function clearedTimes(): Pick<
   DailyRecord,
@@ -18,6 +33,12 @@ function clearedTimes(): Pick<
   | "shortageTime"
   | "shortageManual"
   | "halfDayType"
+  | "patternId"
+  | "patternLabel"
+  | "contractStart"
+  | "contractEnd"
+  | "contractBreak"
+  | "isOvernight"
 > {
   return {
     shiftCode: "",
@@ -30,15 +51,15 @@ function clearedTimes(): Pick<
     shortageTime: "",
     shortageManual: false,
     halfDayType: "none",
+    ...emptyPatternFields(),
   };
 }
 
-export function deriveRecord(record: DailyRecord, personalMinutes?: number | null): DailyRecord {
+export function deriveRecord(record: DailyRecord, personalMinutes?: number | null, dutyOverride?: DutyWindow | null): DailyRecord {
   const shift = shiftFor(record.shiftCode);
-  if (!shift) return record;
-
-  const duty = expectedDuty(shift, record.halfDayType, personalMinutes);
-  if (!duty.start || !duty.end || !record.clockIn || !record.clockOut) {
+  const duty = dutyOverride ?? contractFromRecord(record) ?? (shift ? expectedDuty(shift, record.halfDayType, personalMinutes) : null);
+  if (!duty?.start || !duty.end || !record.clockIn || !record.clockOut) {
+    if (!shift && !dutyOverride && !record.contractStart) return record;
     return {
       ...record,
       overtimeMinutes: record.overtimeManual ? record.overtimeMinutes : 0,
@@ -54,6 +75,7 @@ export function deriveRecord(record: DailyRecord, personalMinutes?: number | nul
     duty.end,
     record.breakMinutes,
     duty.breakMinutes,
+    Boolean(duty.overnight),
   );
   if (!deviation) return record;
 
@@ -85,6 +107,7 @@ export function emptyRecord(date: Date): DailyRecord {
     shortageTime: "",
     shortageManual: false,
     note: "",
+    ...emptyPatternFields(),
   };
 }
 
@@ -143,11 +166,12 @@ function applyDutyClocks(record: DailyRecord, personalMinutes?: number | null): 
   );
 }
 
-export function chooseShift(record: DailyRecord, code: ShiftCode, personalMinutes?: number | null): DailyRecord {
+export function chooseShift(record: DailyRecord, code: ShiftCode, _personalMinutes?: number | null): DailyRecord {
   if (!code) {
     return deriveRecord(
       {
         ...record,
+        ...emptyPatternFields(),
         shiftCode: "",
         clockIn: "",
         clockOut: "",
@@ -158,13 +182,14 @@ export function chooseShift(record: DailyRecord, code: ShiftCode, personalMinute
         shortageTime: "",
         shortageManual: false,
       },
-      personalMinutes,
+      _personalMinutes,
     );
   }
 
   if (code === "free") {
     return {
       ...record,
+      ...emptyPatternFields(),
       shiftCode: "free",
       overtimeManual: true,
       overtimeMinutes: 0,
@@ -179,20 +204,54 @@ export function chooseShift(record: DailyRecord, code: ShiftCode, personalMinute
   return applyDutyClocks(
     {
       ...record,
+      ...emptyPatternFields(),
       shiftCode: code,
+      halfDayType: "none",
       koukyu: "",
       tokki: "",
-      yukyu: record.halfDayType === "am" || record.halfDayType === "pm" ? "△" : "",
+      yukyu: "",
       kekkin: record.kekkin === "○" ? "" : record.kekkin,
     },
-    personalMinutes,
+    null,
   );
+}
+
+function knownShiftCode(value: string): ShiftCode {
+  if (value === "B-2" || value === "A-1" || value === "D" || value === "7.5H") return value;
+  return "";
+}
+
+export function applyShiftPattern(record: DailyRecord, pattern: CustomShiftPattern): DailyRecord {
+  const duty = dutyFromPattern(pattern);
+  if (!duty) return record;
+  const known = shiftFor(knownShiftCode(pattern.shiftCode));
+  return deriveRecord({
+    ...record,
+    shiftCode: known ? known.code : "free",
+    patternId: pattern.id,
+    patternLabel: pattern.label.trim() || pattern.shiftCode || "シフト",
+    contractStart: duty.start,
+    contractEnd: duty.end,
+    contractBreak: duty.breakMinutes,
+    isOvernight: Boolean(duty.overnight),
+    clockIn: duty.start,
+    clockOut: duty.end,
+    breakMinutes: duty.breakMinutes,
+    halfDayType: "none",
+    koukyu: "",
+    tokki: "",
+    yukyu: "",
+    kekkin: record.kekkin === "○" ? "" : record.kekkin,
+    overtimeManual: false,
+    shortageManual: false,
+  });
 }
 
 export function chooseHalf(record: DailyRecord, half: HalfDayType, personalMinutes?: number | null): DailyRecord {
   const paidHalf = half === "am" || half === "pm";
   const next: DailyRecord = {
     ...record,
+    ...emptyPatternFields(),
     halfDayType: half,
     yukyu: paidHalf ? "△" : record.yukyu === "△" ? "" : record.yukyu,
     koukyu: half === "none" ? record.koukyu : "",
@@ -249,15 +308,17 @@ export function editClocks(
   record: DailyRecord,
   patch: Partial<Pick<DailyRecord, "clockIn" | "clockOut" | "breakMinutes">>,
   personalMinutes?: number | null,
+  dutyOverride?: DutyWindow | null,
 ): DailyRecord {
   return deriveRecord(
     {
       ...record,
       ...patch,
-      overtimeManual: record.shiftCode === "free" ? record.overtimeManual : false,
+      overtimeManual: record.shiftCode === "free" && !record.contractStart ? record.overtimeManual : false,
       shortageManual: false,
     },
     personalMinutes,
+    dutyOverride,
   );
 }
 

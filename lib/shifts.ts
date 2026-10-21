@@ -23,6 +23,7 @@ export interface DutyWindow {
   end: string;
   breakMinutes: number;
   scheduledMinutes: number;
+  overnight?: boolean;
 }
 
 export const JOB_LABEL: Record<JobType, string> = {

@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { StaffMember } from "@/lib/staff";
-import { HALF_RULE_LABEL, ROLE_LABEL, WEEKDAY_NAMES, presetForRole, recomputeScheduled } from "@/lib/schedule";
-import { shiftsForJob } from "@/lib/shifts";
-import type { DayShiftSetting, HalfDayRuleType, ShiftCode, StaffRole } from "@/types/kintai";
+import { HALF_RULE_LABEL, ROLE_LABEL, WEEKDAY_NAMES, dayFromShiftCode, presetForRole, recomputeScheduled } from "@/lib/schedule";
+import { blankPattern, defaultShiftPatterns, EMPLOYMENT_LABEL, patternScheduledMinutes, SHIFT_PATTERN_LIMIT, withOvernight } from "@/lib/shift-patterns";
+import { JOB_LABEL, SHIFTS, shiftsForJob } from "@/lib/shifts";
+import { formatHours } from "@/lib/time";
+import type { CustomShiftPattern, DayShiftSetting, EmploymentType, HalfDayRuleType, JobType, ShiftCode, StaffRole } from "@/types/kintai";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -95,34 +97,115 @@ function StaffForm({
   onClose: () => void;
   onSave: (input: Omit<StaffMember, "id">) => void;
 }) {
-  const seed = initial ?? { ...presetForRole("pt_outpatient"), name: "", initialPaidLeave: 10 };
+  const created = presetForRole("pt_outpatient");
+  const seed = initial ?? {
+    ...created,
+    name: "",
+    initialPaidLeave: 10,
+    employmentType: "full_time" as const,
+    shiftPatterns: defaultShiftPatterns("pt_outpatient", "full_time"),
+  };
   const [name, setName] = useState(initial?.name ?? "");
   const [role, setRole] = useState<StaffRole>(seed.role);
   const [halfDayRule, setHalfDayRule] = useState<HalfDayRuleType>(seed.halfDayRule);
   const [sheetType, setSheetType] = useState(seed.sheetType);
   const [paidLeave, setPaidLeave] = useState(String(seed.initialPaidLeave));
-  const [weeklySchedule, setWeeklySchedule] = useState(seed.weeklySchedule);
+  const [employmentType, setEmploymentType] = useState<EmploymentType>(seed.employmentType);
+  const [shiftPatterns, setShiftPatterns] = useState<CustomShiftPattern[]>(() => seed.shiftPatterns.map((item) => ({ ...item })));
+  const [weeklySchedule, setWeeklySchedule] = useState(() => cloneWeek(seed.weeklySchedule));
   const [error, setError] = useState("");
+  const rememberedWork = useRef(rememberWorkDays(seed.weeklySchedule));
 
   function changeRole(next: StaffRole) {
-    const preset = presetForRole(next);
     setRole(next);
+    if (next === "custom") return;
+    const preset = presetForRole(next);
+    const week = cloneWeek(preset.weeklySchedule);
+    rememberedWork.current = rememberWorkDays(week);
     setHalfDayRule(preset.halfDayRule);
     setSheetType(preset.sheetType);
-    setWeeklySchedule(preset.weeklySchedule);
+    setWeeklySchedule(week);
+    setShiftPatterns(defaultShiftPatterns(next, employmentType));
   }
 
-  function updateDay(index: number, patch: Partial<DayShiftSetting>) {
+  function changeEmployment(next: EmploymentType) {
+    setEmploymentType(next);
+    if (role === "custom") return;
+    setShiftPatterns(defaultShiftPatterns(role, next));
+  }
+
+  function updatePattern(id: string, patch: Partial<CustomShiftPattern>) {
+    setShiftPatterns((current) => current.map((item) => (item.id === id ? withOvernight({ ...item, ...patch }) : item)));
+  }
+
+  function putDay(index: number, patch: Partial<DayShiftSetting>) {
     setWeeklySchedule((current) => {
-      const next = { ...current, [index]: recomputeScheduled({ ...current[index], ...patch }) };
-      return next;
+      const prev = current[index] ?? {
+        startTime: "",
+        endTime: "",
+        breakMinutes: 0,
+        scheduledMinutes: 0,
+        shiftCode: "" as ShiftCode,
+        isHoliday: false,
+      };
+      const nextDay = { ...recomputeScheduled({ ...prev, ...patch }) };
+      if (!nextDay.isHoliday && nextDay.shiftCode) {
+        rememberedWork.current = { ...rememberedWork.current, [index]: { ...nextDay } };
+      }
+      return { ...current, [index]: nextDay };
     });
+  }
+
+  function changeSymbol(index: number, code: ShiftCode) {
+    putDay(index, dayFromShiftCode(code));
+  }
+
+  function toggleHoliday(index: number, on: boolean) {
+    if (on) {
+      setWeeklySchedule((current) => {
+        const prev = current[index];
+        if (prev && !prev.isHoliday && prev.shiftCode) {
+          rememberedWork.current = { ...rememberedWork.current, [index]: { ...prev } };
+        }
+        return {
+          ...current,
+          [index]: recomputeScheduled({
+            ...(prev ?? {
+              startTime: "",
+              endTime: "",
+              breakMinutes: 0,
+              scheduledMinutes: 0,
+              shiftCode: "" as ShiftCode,
+              isHoliday: true,
+            }),
+            startTime: "",
+            endTime: "",
+            breakMinutes: 0,
+            scheduledMinutes: 0,
+            shiftCode: "",
+            isHoliday: true,
+          }),
+        };
+      });
+      return;
+    }
+    const restored = rememberedWork.current[index];
+    if (restored?.shiftCode) {
+      putDay(index, { ...restored, isHoliday: false });
+      return;
+    }
+    const presetDay = presetForRole(role === "custom" ? "pt_outpatient" : role).weeklySchedule[index];
+    putDay(index, !presetDay.isHoliday && presetDay.shiftCode ? { ...presetDay } : dayFromShiftCode(sheetType === "pt" ? "B-2" : "7.5H"));
   }
 
   function save() {
     const trimmed = name.trim();
     if (!trimmed) {
       setError("氏名を入力してください");
+      return;
+    }
+    if (shiftPatterns.some((item) => !item.label.trim() || !item.startTime || !item.endTime)) {
+      setError("マイ・シフトは名前・始業・終業を入力してください");
       return;
     }
     const leave = Number(paidLeave);
@@ -133,10 +216,12 @@ function StaffForm({
       sheetType,
       initialPaidLeave: Number.isFinite(leave) && leave >= 0 ? leave : 0,
       weeklySchedule,
+      employmentType,
+      shiftPatterns: shiftPatterns.map((item) => withOvernight({ ...item, label: item.label.trim() })),
     });
   }
 
-  const shiftChoices = shiftsForJob(sheetType);
+  const shiftChoices = role === "custom" ? Object.values(SHIFTS) : shiftsForJob(sheetType);
 
   return createPortal(
     <div
@@ -174,6 +259,108 @@ function StaffForm({
             </select>
           </label>
           <label className="flex flex-col gap-1 text-sm">
+            <Label htmlFor="new-staff-employment">雇用形態</Label>
+            <select
+              id="new-staff-employment"
+              className={field}
+              value={employmentType}
+              onChange={(event) => changeEmployment(event.target.value as EmploymentType)}
+            >
+              {(Object.keys(EMPLOYMENT_LABEL) as EmploymentType[]).map((item) => (
+                <option key={item} value={item}>
+                  {EMPLOYMENT_LABEL[item]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-medium">マイ・シフトパレット（最大{SHIFT_PATTERN_LIMIT}枠）</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={shiftPatterns.length >= SHIFT_PATTERN_LIMIT}
+                onClick={() => setShiftPatterns((current) => [...current, blankPattern(current)])}
+              >
+                シフトを追加
+              </Button>
+            </div>
+            {shiftPatterns.length === 0 ? <p className="text-xs text-muted-foreground">登録されたシフトはまだありません。</p> : null}
+            {shiftPatterns.map((item) => (
+              <div key={item.id} className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_4rem_minmax(0,0.8fr)_auto_auto] items-center gap-1">
+                <input
+                  aria-label={`${item.id} 名前`}
+                  className={field}
+                  value={item.label}
+                  placeholder="時短"
+                  onChange={(event) => updatePattern(item.id, { label: event.target.value })}
+                />
+                <input
+                  aria-label={`${item.id} 始業`}
+                  className={field}
+                  type="time"
+                  value={item.startTime}
+                  onChange={(event) => updatePattern(item.id, { startTime: event.target.value })}
+                />
+                <input
+                  aria-label={`${item.id} 終業`}
+                  className={field}
+                  type="time"
+                  value={item.endTime}
+                  onChange={(event) => updatePattern(item.id, { endTime: event.target.value })}
+                />
+                <input
+                  aria-label={`${item.id} 休憩`}
+                  className={field}
+                  type="number"
+                  min={0}
+                  step={5}
+                  value={item.breakMinutes}
+                  onChange={(event) => updatePattern(item.id, { breakMinutes: Number(event.target.value) || 0 })}
+                />
+                <input
+                  aria-label={`${item.id} 記号`}
+                  className={field}
+                  list="shift-code-suggestions"
+                  value={item.shiftCode}
+                  placeholder="日勤"
+                  onChange={(event) => updatePattern(item.id, { shiftCode: event.target.value })}
+                />
+                <label className="flex items-center gap-1 text-xs">
+                  <input
+                    aria-label={`${item.id} 日またぎ`}
+                    type="checkbox"
+                    checked={Boolean(item.isOvernight)}
+                    onChange={(event) => updatePattern(item.id, { isOvernight: event.target.checked })}
+                  />
+                  翌
+                </label>
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                  onClick={() => setShiftPatterns((current) => current.filter((pattern) => pattern.id !== item.id))}
+                >
+                  削除
+                </button>
+                <span className="col-span-full text-[11px] text-muted-foreground" aria-label={`${item.id} 所定`}>
+                  所定 {formatHours(patternScheduledMinutes(item))}h
+                  {item.isOvernight ? "（翌日またぎ）" : ""}
+                </span>
+              </div>
+            ))}
+            <datalist id="shift-code-suggestions">
+              <option value="B-2" />
+              <option value="A-1" />
+              <option value="D" />
+              <option value="7.5H" />
+              <option value="日勤" />
+              <option value="夜勤" />
+              <option value="時短" />
+              <option value="半日" />
+            </datalist>
+          </div>
+          <label className="flex flex-col gap-1 text-sm">
             <Label htmlFor="new-staff-half">半休ルール</Label>
             <select
               id="new-staff-half"
@@ -188,21 +375,41 @@ function StaffForm({
               ))}
             </select>
           </label>
-          <p className="text-xs text-muted-foreground">
-            出力シート: {sheetType === "pt" ? "理学療法士" : "リハビリフルタイムパート"}
-          </p>
+          {role === "custom" ? (
+            <label className="flex flex-col gap-1 text-sm">
+              <Label htmlFor="new-staff-sheet">出力シート</Label>
+              <select
+                id="new-staff-sheet"
+                className={field}
+                value={sheetType}
+                onChange={(event) => setSheetType(event.target.value as JobType)}
+              >
+                <option value="pt">{JOB_LABEL.pt}</option>
+                <option value="rehab_part">{JOB_LABEL.rehab_part}</option>
+              </select>
+            </label>
+          ) : (
+            <p className="text-xs text-muted-foreground">出力シート: {JOB_LABEL[sheetType]}</p>
+          )}
           <div className="flex flex-col gap-2">
             <p className="text-sm font-medium">曜日ごとの所定</p>
             {WEEKDAY_NAMES.map((label, index) => {
-              const day = weeklySchedule[index];
+              const day = weeklySchedule[index] ?? {
+                startTime: "",
+                endTime: "",
+                breakMinutes: 0,
+                scheduledMinutes: 0,
+                shiftCode: "" as ShiftCode,
+                isHoliday: true,
+              };
               return (
-                <div key={label} className="grid grid-cols-[1.5rem_4.5rem_1fr_1fr_3.5rem_4.5rem] items-center gap-1 text-xs">
+                <div key={label} className="grid grid-cols-[1.5rem_4.5rem_minmax(0,1fr)_minmax(0,1fr)_3.5rem_4.5rem_2.75rem] items-center gap-1 text-xs">
                   <span>{label}</span>
                   <label className="flex items-center gap-1">
                     <input
                       type="checkbox"
                       checked={day.isHoliday}
-                      onChange={(event) => updateDay(index, { isHoliday: event.target.checked })}
+                      onChange={(event) => toggleHoliday(index, event.target.checked)}
                     />
                     公休
                   </label>
@@ -212,7 +419,7 @@ function StaffForm({
                     type="time"
                     disabled={day.isHoliday}
                     value={day.startTime}
-                    onChange={(event) => updateDay(index, { startTime: event.target.value })}
+                    onChange={(event) => putDay(index, { startTime: event.target.value, isHoliday: false })}
                   />
                   <input
                     aria-label={`${label} 終業`}
@@ -220,7 +427,7 @@ function StaffForm({
                     type="time"
                     disabled={day.isHoliday}
                     value={day.endTime}
-                    onChange={(event) => updateDay(index, { endTime: event.target.value })}
+                    onChange={(event) => putDay(index, { endTime: event.target.value, isHoliday: false })}
                   />
                   <input
                     aria-label={`${label} 休憩`}
@@ -230,14 +437,13 @@ function StaffForm({
                     step={5}
                     disabled={day.isHoliday}
                     value={day.breakMinutes}
-                    onChange={(event) => updateDay(index, { breakMinutes: Number(event.target.value) || 0 })}
+                    onChange={(event) => putDay(index, { breakMinutes: Number(event.target.value) || 0, isHoliday: false })}
                   />
                   <select
                     aria-label={`${label} 記号`}
                     className={field}
-                    disabled={day.isHoliday}
                     value={day.shiftCode}
-                    onChange={(event) => updateDay(index, { shiftCode: event.target.value as ShiftCode })}
+                    onChange={(event) => changeSymbol(index, event.target.value as ShiftCode)}
                   >
                     <option value="">—</option>
                     {shiftChoices.map((shift) => (
@@ -246,6 +452,9 @@ function StaffForm({
                       </option>
                     ))}
                   </select>
+                  <span className="tabular-nums text-muted-foreground" aria-label={`${label} 所定`}>
+                    {day.isHoliday ? "0h" : `${formatHours(day.scheduledMinutes)}h`}
+                  </span>
                 </div>
               );
             })}
@@ -273,4 +482,21 @@ function StaffForm({
     </div>,
     document.body,
   );
+}
+
+function cloneWeek(week: Record<number, DayShiftSetting>): Record<number, DayShiftSetting> {
+  const copy: Record<number, DayShiftSetting> = {};
+  for (let index = 0; index < 7; index += 1) {
+    copy[index] = { ...(week[index] ?? { startTime: "", endTime: "", breakMinutes: 0, scheduledMinutes: 0, shiftCode: "", isHoliday: true }) };
+  }
+  return copy;
+}
+
+function rememberWorkDays(week: Record<number, DayShiftSetting>): Partial<Record<number, DayShiftSetting>> {
+  const remembered: Partial<Record<number, DayShiftSetting>> = {};
+  for (let index = 0; index < 7; index += 1) {
+    const day = week[index];
+    if (day && !day.isHoliday && day.shiftCode) remembered[index] = { ...day };
+  }
+  return remembered;
 }

@@ -1,13 +1,17 @@
 import type { DailyRecord, DayShiftSetting, HalfDayRuleType, MonthlyAttendance, ShiftCode, StaffRole } from "@/types/kintai";
-import { deriveRecord } from "@/lib/records";
-import { expectedDuty, shiftFor } from "@/lib/shifts";
+import { deriveRecord, emptyPatternFields } from "@/lib/records";
+import { expectedDuty, shiftFor, type DutyWindow } from "@/lib/shifts";
 import { formatHHMM, parseHHMM } from "@/lib/time";
 
 export const ROLE_LABEL: Record<StaffRole, string> = {
   pt_outpatient: "理学療法士（外来）",
   pt_inpatient: "理学療法士（入院）",
-  rehab_assistant: "リハビリ助手（非対称半休あり）",
+  rehab_assistant: "リハビリ助手（特定）",
+  nurse: "看護師",
+  clerk: "事務（医事・総務）",
+  radiologist: "放射線技師",
   part_timer: "パート / その他",
+  custom: "カスタム / シフト制（自由設定）",
 };
 
 export const HALF_RULE_LABEL: Record<HalfDayRuleType, string> = {
@@ -43,6 +47,78 @@ export function presetForRole(role: StaffRole): RolePreset {
       }),
     };
   }
+  if (role === "pt_inpatient") {
+    return {
+      role,
+      halfDayRule: "equal_4h",
+      sheetType: "pt",
+      weeklySchedule: schedule({
+        0: holiday(),
+        1: work("09:00", "18:00", 60, "B-2"),
+        2: work("09:00", "18:00", 60, "B-2"),
+        3: work("09:00", "18:00", 60, "B-2"),
+        4: work("09:00", "18:00", 60, "B-2"),
+        5: work("09:00", "18:00", 60, "B-2"),
+        6: holiday(),
+      }),
+    };
+  }
+  if (role === "custom") {
+    const open = (): DayShiftSetting => ({
+      startTime: "",
+      endTime: "",
+      breakMinutes: 0,
+      scheduledMinutes: 0,
+      shiftCode: "",
+      isHoliday: false,
+    });
+    return {
+      role,
+      halfDayRule: "equal_4h",
+      sheetType: "pt",
+      weeklySchedule: schedule({
+        0: open(),
+        1: open(),
+        2: open(),
+        3: open(),
+        4: open(),
+        5: open(),
+        6: open(),
+      }),
+    };
+  }
+  if (role === "nurse") {
+    return {
+      role,
+      halfDayRule: "equal_4h",
+      sheetType: "rehab_part",
+      weeklySchedule: schedule({
+        0: holiday(),
+        1: work("08:30", "17:30", 60, "A-1"),
+        2: work("08:30", "17:30", 60, "A-1"),
+        3: work("08:30", "17:30", 60, "A-1"),
+        4: work("08:30", "17:30", 60, "A-1"),
+        5: work("08:30", "17:30", 60, "A-1"),
+        6: holiday(),
+      }),
+    };
+  }
+  if (role === "clerk" || role === "radiologist") {
+    return {
+      role,
+      halfDayRule: "equal_4h",
+      sheetType: "rehab_part",
+      weeklySchedule: schedule({
+        0: holiday(),
+        1: work("08:30", "17:30", 60, "A-1"),
+        2: work("08:30", "17:30", 60, "A-1"),
+        3: work("08:30", "17:30", 60, "A-1"),
+        4: work("08:30", "12:30", 0, "D"),
+        5: work("08:30", "17:30", 60, "A-1"),
+        6: work("08:30", "12:30", 0, "D"),
+      }),
+    };
+  }
   if (role === "part_timer") {
     return {
       role,
@@ -60,7 +136,7 @@ export function presetForRole(role: StaffRole): RolePreset {
     };
   }
   return {
-    role,
+    role: "pt_outpatient",
     halfDayRule: "equal_4h",
     sheetType: "pt",
     weeklySchedule: schedule({
@@ -118,8 +194,36 @@ export function halfWindow(
   return { clockIn: start, clockOut: formatHHMM(startMin + 240), scheduledMinutes: 240 };
 }
 
+export function holidayDay(): DayShiftSetting {
+  return { startTime: "", endTime: "", breakMinutes: 0, scheduledMinutes: 0, shiftCode: "", isHoliday: true };
+}
+
+export function dayFromShiftCode(code: ShiftCode): DayShiftSetting {
+  const shift = shiftFor(code);
+  if (!shift) return holidayDay();
+  return {
+    startTime: shift.start,
+    endTime: shift.end,
+    breakMinutes: shift.breakMinutes,
+    scheduledMinutes: shift.scheduledMinutes,
+    shiftCode: code,
+    isHoliday: false,
+  };
+}
+
+export function dutyFromSetting(day: DayShiftSetting | undefined): DutyWindow | null {
+  if (!day || day.isHoliday || !day.startTime || !day.endTime) return null;
+  const scheduled = recomputeScheduled(day);
+  return {
+    start: scheduled.startTime,
+    end: scheduled.endTime,
+    breakMinutes: scheduled.breakMinutes,
+    scheduledMinutes: scheduled.scheduledMinutes,
+  };
+}
+
 export function recomputeScheduled(day: DayShiftSetting): DayShiftSetting {
-  if (day.isHoliday) return { ...day, scheduledMinutes: 0 };
+  if (day.isHoliday) return holidayDay();
   const start = parseHHMM(day.startTime);
   const end = parseHHMM(day.endTime);
   if (start == null || end == null || end <= start) return { ...day, scheduledMinutes: 0 };
@@ -141,6 +245,7 @@ function applyScheduleDay(
   const shift = day.isHoliday || !day.shiftCode ? (staff.sheetType === "pt" ? "B-2" : "7.5H") : day.shiftCode;
   return {
     ...record,
+    ...emptyPatternFields(),
     shiftCode: shift,
     clockIn: window.clockIn,
     clockOut: window.clockOut,
@@ -164,6 +269,7 @@ function assignScheduledWork(record: DailyRecord, shift: ShiftCode, start: strin
   const matches = Boolean(duty && duty.start === start && duty.end === end && duty.breakMinutes === breakMinutes);
   const next: DailyRecord = {
     ...record,
+    ...emptyPatternFields(),
     shiftCode: shift,
     clockIn: start,
     clockOut: end,
@@ -191,6 +297,7 @@ function clearWork(record: DailyRecord): DailyRecord {
     yukyu: "",
     halfDayType: "none",
     shiftCode: "",
+    ...emptyPatternFields(),
     clockIn: "",
     clockOut: "",
     breakMinutes: 0,
@@ -207,7 +314,7 @@ function work(startTime: string, endTime: string, breakMinutes: number, shiftCod
 }
 
 function holiday(): DayShiftSetting {
-  return { startTime: "", endTime: "", breakMinutes: 0, scheduledMinutes: 0, shiftCode: "", isHoliday: true };
+  return holidayDay();
 }
 
 function schedule(days: Record<number, DayShiftSetting>): Record<number, DayShiftSetting> {

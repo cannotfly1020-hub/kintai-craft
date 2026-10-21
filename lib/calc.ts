@@ -68,10 +68,19 @@ export function noteForExport(record: DailyRecord): string {
           : record.halfDayType === "pm_off"
             ? "午後休"
             : "";
-  const text = record.note.trim();
+  const pattern = patternNote(record);
+  const memo = record.note.trim();
+  const text = pattern && !memo.includes(pattern) ? (memo ? `${pattern} ${memo}` : pattern) : memo;
   if (!tag) return text;
   if (text.startsWith(tag)) return text;
   return text ? `${tag} ${text}` : tag;
+}
+
+function patternNote(record: DailyRecord): string {
+  const label = record.patternLabel.trim();
+  if (!label || !record.contractStart || !record.contractEnd) return "";
+  const end = record.isOvernight ? `翌${record.contractEnd}` : record.contractEnd;
+  return `${label} ${record.contractStart}〜${end}`;
 }
 
 export function splitOvertimeSpan(span: string): { start: string; end: string } {
@@ -98,26 +107,32 @@ export function computeDeviation(
   expectedEnd: string,
   breakMinutes: number,
   standardBreak: number,
+  overnight = false,
 ): Deviation | null {
   const inn = parseHHMM(clockIn);
   const out = parseHHMM(clockOut);
   const start = parseHHMM(expectedStart);
   const end = parseHHMM(expectedEnd);
   if (inn == null || out == null || start == null || end == null) return null;
-  if (out <= inn || end <= start) return null;
+  const night = overnight || end < start;
+  if (!night && (out <= inn || end <= start)) return null;
+
+  const actualEnd = night && out <= inn ? out + 24 * 60 : out;
+  const expectedEndAt = night && end <= start ? end + 24 * 60 : end;
+  if (actualEnd <= inn || expectedEndAt <= start) return null;
 
   const spans: { start: number; end: number }[] = [];
   if (inn < start) {
-    const spanEnd = Math.min(out, start);
+    const spanEnd = Math.min(actualEnd, start);
     if (spanEnd > inn) spans.push({ start: inn, end: spanEnd });
   }
-  if (out > end) {
-    const spanStart = Math.max(inn, end);
-    if (out > spanStart) spans.push({ start: spanStart, end: out });
+  if (actualEnd > expectedEndAt) {
+    const spanStart = Math.max(inn, expectedEndAt);
+    if (actualEnd > spanStart) spans.push({ start: spanStart, end: actualEnd });
   }
 
-  const overlap = Math.max(0, Math.min(out, end) - Math.max(inn, start));
-  const shortage = Math.max(0, end - start - overlap) + Math.max(0, breakMinutes - standardBreak);
+  const overlap = Math.max(0, Math.min(actualEnd, expectedEndAt) - Math.max(inn, start));
+  const shortage = Math.max(0, expectedEndAt - start - overlap) + Math.max(0, breakMinutes - standardBreak);
 
   return {
     overtimeMinutes: spans.reduce((sum, span) => sum + (span.end - span.start), 0),

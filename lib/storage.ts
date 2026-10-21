@@ -97,6 +97,12 @@ export function parseAttendance(value: unknown): MonthlyAttendance | null {
       shortageTime: record.shortageTime ?? "",
       shortageManual: Boolean(record.shortageManual),
       note: record.note ?? "",
+      patternId: typeof record.patternId === "string" ? record.patternId : "",
+      patternLabel: typeof record.patternLabel === "string" ? record.patternLabel : "",
+      contractStart: typeof record.contractStart === "string" ? record.contractStart : "",
+      contractEnd: typeof record.contractEnd === "string" ? record.contractEnd : "",
+      contractBreak: Number(record.contractBreak) || 0,
+      isOvernight: Boolean(record.isOvernight),
     })),
   };
 }

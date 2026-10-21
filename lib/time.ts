@@ -44,6 +44,27 @@ export function parseDurationMinutes(value: string): number {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
+export function spanMinutes(start: string, end: string): number | null {
+  const inn = parseHHMM(start);
+  const out = parseHHMM(end);
+  if (inn == null || out == null || inn === out) return null;
+  if (out > inn) return out - inn;
+  return out + 24 * 60 - inn;
+}
+
+export function crossesMidnight(start: string, end: string): boolean {
+  const inn = parseHHMM(start);
+  const out = parseHHMM(end);
+  if (inn == null || out == null) return false;
+  return out < inn;
+}
+
+export function scheduledWorkMinutes(start: string, end: string, breakMinutes: number): number {
+  const span = spanMinutes(start, end);
+  if (span == null) return 0;
+  return Math.max(0, span - (Number(breakMinutes) || 0));
+}
+
 export function formatHours(totalMinutes: number): string {
   const hours = totalMinutes / 60;
   return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
