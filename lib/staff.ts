@@ -1,6 +1,6 @@
 import type { CustomShiftPattern, DayShiftSetting, EmploymentType, HalfDayRuleType, JobType, MonthlyAttendance, ShiftCode, StaffRole } from "@/types/kintai";
 import { presetForRole, recomputeScheduled, ROLE_LABEL } from "@/lib/schedule";
-import { defaultEmployment, defaultShiftPatterns, normalizePatterns } from "@/lib/shift-patterns";
+import { defaultContractHours, defaultEmployment, defaultShiftPatterns, normalizePatterns } from "@/lib/shift-patterns";
 import { defaultClosing } from "@/lib/period";
 import { createAttendance } from "@/lib/records";
 import { parseAttendance } from "@/lib/storage";
@@ -15,6 +15,8 @@ export interface StaffMember {
   weeklySchedule: Record<number, DayShiftSetting>;
   employmentType: EmploymentType;
   shiftPatterns: CustomShiftPattern[];
+  contractHoursPerDay?: number;
+  hourlyWage?: number;
 }
 
 export const STAFF_LIST_KEY = "kintai_craft_staff_list_v1";
@@ -122,6 +124,10 @@ export function loadStaffMonth(
 export function ensureStaffWorkspace(): { staff: StaffMember[]; currentId: string } {
   const existing = loadStaffList();
   if (existing.length > 0) {
+    const raw = localStorage.getItem(STAFF_LIST_KEY) ?? "";
+    if (/AMパート|PMパート|AM半休|PM半休|\bAM\b|\bPM\b/.test(raw)) {
+      saveStaffList(existing);
+    }
     const currentId = existing.some((staff) => staff.id === loadCurrentStaffId())
       ? (loadCurrentStaffId() as string)
       : existing[0].id;
@@ -197,6 +203,8 @@ function normalizeStaff(value: unknown): StaffMember | null {
   const sheetType = data.sheetType === "pt" || data.sheetType === "rehab_part" ? data.sheetType : preset.sheetType;
   const employmentType = normalizeEmployment(data.employmentType, role);
   const savedPatterns = Array.isArray(data.shiftPatterns) ? normalizePatterns(data.shiftPatterns) : null;
+  const shiftPatterns = savedPatterns ?? defaultShiftPatterns(role, employmentType);
+  const contractHoursPerDay = normalizeHours(data.contractHoursPerDay);
   return {
     id: data.id,
     name: typeof data.name === "string" ? data.name : "",
@@ -206,8 +214,23 @@ function normalizeStaff(value: unknown): StaffMember | null {
     initialPaidLeave: Number(data.initialPaidLeave) || 0,
     weeklySchedule: normalizeWeek(data.weeklySchedule, preset.weeklySchedule),
     employmentType,
-    shiftPatterns: savedPatterns ?? defaultShiftPatterns(role, employmentType),
+    shiftPatterns,
+    contractHoursPerDay:
+      employmentType === "part_time" ? (contractHoursPerDay ?? defaultContractHours(shiftPatterns)) : contractHoursPerDay,
+    hourlyWage: normalizeWage(data.hourlyWage),
   };
+}
+
+function normalizeHours(value: unknown): number | undefined {
+  const hours = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : Number.NaN;
+  if (!Number.isFinite(hours) || hours <= 0 || hours > 24) return undefined;
+  return Math.round(hours * 10) / 10;
+}
+
+function normalizeWage(value: unknown): number | undefined {
+  const wage = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : Number.NaN;
+  if (!Number.isFinite(wage) || wage <= 0) return undefined;
+  return Math.round(wage);
 }
 
 function normalizeEmployment(value: unknown, role: StaffRole): EmploymentType {

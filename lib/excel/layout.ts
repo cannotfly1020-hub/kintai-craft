@@ -88,6 +88,9 @@ export const FOOTER_LABELS = [
   "給食合計（円）",
   "遅早外出（回）",
   "半日未満（回）",
+  "勤務時間合計",
+  "有休時間合計",
+  "支給対象時間",
 ] as const;
 
 export function footerStartRow(): number {

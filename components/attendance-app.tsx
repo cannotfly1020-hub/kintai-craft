@@ -182,7 +182,12 @@ export function AttendanceApp() {
       const response = await fetch("/api/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(current),
+        body: JSON.stringify({
+          ...current,
+          halfDayRule: activeStaff.halfDayRule,
+          contractHoursPerDay: activeStaff.contractHoursPerDay,
+          weeklySchedule: activeStaff.weeklySchedule,
+        }),
       });
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -301,6 +306,7 @@ export function AttendanceApp() {
           patterns={activeStaff.shiftPatterns}
           activePatternId={todayRecord?.patternId ?? ""}
           canApplyToday={Boolean(todayRecord)}
+          showAke={activeStaff.role === "nurse"}
           onApplyMonth={applyMonth}
           onApplyPattern={(pattern) => applyPattern(today, pattern)}
           onAke={() => {
@@ -447,10 +453,17 @@ export function AttendanceApp() {
           weeklySchedule={activeStaff.weeklySchedule}
           patterns={activeStaff.shiftPatterns}
           showAllShifts={activeStaff.role === "custom"}
+          showAke={activeStaff.role === "nurse"}
           onRecord={updateRecord}
           onHalfMode={(date, mode) => setAttendance((current) => (current ? applyStaffDay(current, activeStaff, mode, date) : current))}
         />
-        <SummaryPanel attendance={attendance} />
+        <SummaryPanel
+          attendance={attendance}
+          employmentType={activeStaff.employmentType}
+          halfDayRule={activeStaff.halfDayRule}
+          contractHoursPerDay={activeStaff.contractHoursPerDay}
+          weeklySchedule={activeStaff.weeklySchedule}
+        />
       </main>
     </div>
   );

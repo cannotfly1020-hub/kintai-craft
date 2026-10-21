@@ -32,6 +32,7 @@ export function LedgerTable({
   weeklySchedule,
   patterns = [],
   showAllShifts = false,
+  showAke = false,
   onRecord,
   onHalfMode,
 }: {
@@ -42,6 +43,7 @@ export function LedgerTable({
   weeklySchedule?: Record<number, DayShiftSetting>;
   patterns?: CustomShiftPattern[];
   showAllShifts?: boolean;
+  showAke?: boolean;
   onRecord: (date: string, next: DailyRecord) => void;
   onHalfMode?: (date: string, mode: "normal" | "am" | "pm") => void;
 }) {
@@ -205,7 +207,7 @@ export function LedgerTable({
                       </option>
                     ))}
                     <option value="free">自由</option>
-                    <option value="明け">明け</option>
+                    {showAke ? <option value="明け">明け</option> : null}
                     {record.shiftCode &&
                     record.shiftCode !== "free" &&
                     record.shiftCode !== "明け" &&
@@ -213,6 +215,7 @@ export function LedgerTable({
                     !patterns.some((pattern) => pattern.id === record.patternId) ? (
                       <option value={record.shiftCode}>{record.patternLabel || shiftLabel(record.shiftCode)}</option>
                     ) : null}
+                    {!showAke && record.shiftCode === "明け" ? <option value="明け">明け</option> : null}
                   </select>
                   {record.patternLabel ? <p className="mt-1 text-[10px] font-medium">{record.patternLabel}</p> : null}
                   {duty?.start ? (
@@ -239,15 +242,17 @@ export function LedgerTable({
                         {patternButtonLabel(pattern)}
                       </button>
                     ))}
-                    <button
-                      type="button"
-                      aria-label={`${record.date} 明け`}
-                      aria-pressed={record.shiftCode === "明け"}
-                      onClick={() => onRecord(record.date, applyAke(record))}
-                      className="rounded-full border border-border bg-background px-1.5 py-0.5 text-[10px] hover:bg-muted"
-                    >
-                      明け
-                    </button>
+                    {showAke ? (
+                      <button
+                        type="button"
+                        aria-label={`${record.date} 明け`}
+                        aria-pressed={record.shiftCode === "明け"}
+                        onClick={() => onRecord(record.date, applyAke(record))}
+                        className="rounded-full border border-border bg-background px-1.5 py-0.5 text-[10px] hover:bg-muted"
+                      >
+                        明け
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       aria-label={`${record.date} 公休`}
@@ -299,8 +304,8 @@ export function LedgerTable({
                 </td>
                 <td className="px-2 py-1.5">
                   <div className="flex items-center gap-1">
-                    {record.halfDayType === "am" ? <HalfTag>AM半休</HalfTag> : null}
-                    {record.halfDayType === "pm" ? <HalfTag>PM半休</HalfTag> : null}
+                    {record.halfDayType === "am" ? <HalfTag>午前半休</HalfTag> : null}
+                    {record.halfDayType === "pm" ? <HalfTag>午後半休</HalfTag> : null}
                     {record.halfDayType === "am_off" ? <HalfTag>午前休</HalfTag> : null}
                     {record.halfDayType === "pm_off" ? <HalfTag>午後休</HalfTag> : null}
                     <input

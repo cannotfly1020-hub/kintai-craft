@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
-import { computeDeviation, noteForExport, summarize } from "../lib/calc";
+import { computeDeviation, noteForExport, paidLeaveMinutes, summarize } from "../lib/calc";
 import { holidayName } from "../lib/holidays";
 import { renderAttendance, renderAttendanceWorkbook, resolveJobSheet } from "../lib/excel/fill";
 import { createAttendanceTemplate } from "../lib/excel/template";
@@ -309,7 +309,8 @@ assert.equal(shortPatterns[0].label, "時短");
 assert.equal(patternScheduledMinutes(shortPatterns[0]), 360);
 assert.equal(patternScheduledMinutes(shortPatterns[1]), 240);
 const partPatterns = defaultShiftPatterns("nurse", "part_time");
-assert.equal(partPatterns[0].label, "AMパート");
+assert.equal(partPatterns[0].label, "午前パート");
+assert.equal(partPatterns[1].label, "午後パート");
 assert.equal(partPatterns[0].startTime, "08:30");
 assert.equal(partPatterns[0].endTime, "12:30");
 assert.equal(partPatterns[0].breakMinutes, 0);
@@ -362,7 +363,43 @@ assert.deepEqual(computeDeviation("09:00", "19:30", "09:00", "18:00", 60, 60), {
 });
 const keptWeek = normalizeStaffList([{ id: "staff_1", name: "テスト太郎", role: "pt_outpatient", initialPaidLeave: 12 }]);
 assert.equal(keptWeek[0].employmentType, "full_time");
+assert.equal(keptWeek[0].contractHoursPerDay, undefined);
+assert.equal(keptWeek[0].hourlyWage, undefined);
 assert.equal(keptWeek[0].shiftPatterns[0].shiftCode, "B-2");
+const partNurse = normalizeStaffList([
+  { id: "staff_4", name: "パート看護", role: "nurse", employmentType: "part_time", hourlyWage: 1400, initialPaidLeave: 3 },
+]);
+assert.equal(partNurse[0].role, "nurse");
+assert.equal(partNurse[0].employmentType, "part_time");
+assert.equal(partNurse[0].sheetType, "rehab_part");
+assert.equal(partNurse[0].contractHoursPerDay, 4);
+assert.equal(partNurse[0].hourlyWage, 1400);
+assert.equal(partNurse[0].shiftPatterns[0].label, "午前パート");
+assert.equal(
+  normalizeStaffList([
+    {
+      id: "staff_legacy",
+      name: "旧表記",
+      role: "part_timer",
+      employmentType: "part_time",
+      shiftPatterns: [{ id: "shift_am", label: "AMパート", startTime: "08:30", endTime: "12:30", breakMinutes: 0, shiftCode: "D" }],
+      initialPaidLeave: 1,
+    },
+  ])[0].shiftPatterns[0].label,
+  "午前パート",
+);
+const partClerk = normalizeStaffList([
+  { id: "staff_5", name: "パート事務", role: "clerk", employmentType: "full_time", initialPaidLeave: 3 },
+]);
+assert.equal(partClerk[0].role, "clerk");
+assert.equal(partClerk[0].employmentType, "full_time");
+assert.equal(partClerk[0].contractHoursPerDay, undefined);
+const partRadiology = normalizeStaffList([
+  { id: "staff_6", name: "パート放射線", role: "radiologist", employmentType: "part_time", contractHoursPerDay: 7.5, initialPaidLeave: 2 },
+]);
+assert.equal(partRadiology[0].role, "radiologist");
+assert.equal(partRadiology[0].employmentType, "part_time");
+assert.equal(partRadiology[0].contractHoursPerDay, 7.5);
 assert.equal(keptWeek[0].weeklySchedule[4].shiftCode, "D");
 assert.equal(keptWeek[0].weeklySchedule[1].startTime, "09:00");
 assert.equal(dayFromShiftCode("B-2").startTime, "09:00");
@@ -454,6 +491,13 @@ assert.equal(assistantPm?.clockIn, "08:30");
 assert.equal(assistantPm?.clockOut, "12:00");
 assert.equal(assistantPm?.yukyu, "△");
 
+function footerCell(sheet: ExcelJS.Worksheet, label: string) {
+  for (let row = 1; row <= sheet.rowCount; row += 1) {
+    if (sheet.getCell(row, 1).value === label) return sheet.getCell(row, 3).value;
+  }
+  return null;
+}
+
 async function main() {
 const buffer = await renderAttendanceWorkbook(attendance);
 const workbook = new ExcelJS.Workbook();
@@ -479,7 +523,7 @@ assert.equal(sheet.getCell(oct1Row, 7).border?.left?.style, "thin");
 const oct5Row = 22;
 assert.equal(sheet.getCell(oct5Row, 6).value, "△");
 assert.equal(sheet.getCell(oct5Row, 7).value, "△");
-assert.equal(sheet.getCell(oct5Row, 13).value, "AM半休");
+assert.equal(sheet.getCell(oct5Row, 13).value, "午前半休");
 
 const rehab = createAttendance({
   year: 2026,
@@ -618,6 +662,72 @@ const assistantSheet = assistantExcel.getWorksheet(SHEET_NAME.rehab_part);
 assert.ok(assistantSheet);
 assert.equal(assistantSheet.getCell(8, 9).value, "○");
 assert.equal(assistantSheet.getCell(8, 7).value, null);
+
+const fourHourDay = {
+  startTime: "08:30",
+  endTime: "12:30",
+  breakMinutes: 0,
+  scheduledMinutes: 240,
+  shiftCode: "半日",
+  isHoliday: false,
+};
+const partWeek = {
+  0: { ...fourHourDay, startTime: "", endTime: "", scheduledMinutes: 0, shiftCode: "", isHoliday: true },
+  1: fourHourDay,
+  2: fourHourDay,
+  3: fourHourDay,
+  4: fourHourDay,
+  5: fourHourDay,
+  6: fourHourDay,
+};
+const partHours = { halfDayRule: "equal_4h" as const, contractHoursPerDay: 7.5, weeklySchedule: partWeek };
+const partMonth = createAttendance({ year: 2026, month: 11, jobType: "pt", staffName: "パート理学" });
+partMonth.records = partMonth.records.map((record) => {
+  if (record.date === "2026-10-21") {
+    return applyShiftPattern(record, {
+      id: "am",
+      label: "午前",
+      startTime: "08:30",
+      endTime: "12:30",
+      breakMinutes: 0,
+      shiftCode: "半日",
+    });
+  }
+  if (record.date === "2026-10-22" || record.date === "2026-10-25") return { ...record, yukyu: "○" as const };
+  if (record.date === "2026-10-23") return { ...record, yukyu: "△" as const, halfDayType: "am" as const };
+  return record;
+});
+const partSummary = summarize(partMonth, partHours);
+assert.equal(partSummary.workedMinutes, 240);
+assert.equal(partSummary.paidLeaveMinutes, 810);
+assert.equal(partSummary.payableMinutes, 1050);
+assert.equal(partSummary.yukyu, 2.5);
+assert.equal(
+  paidLeaveMinutes(
+    { ...partMonth.records[0], yukyu: "○", halfDayType: "none" },
+    {
+      halfDayRule: "equal_4h",
+      contractHoursPerDay: 4,
+      weeklySchedule: { ...partWeek, 3: { ...fourHourDay, startTime: "09:00", endTime: "18:00", breakMinutes: 60, scheduledMinutes: 480, shiftCode: "日勤" } },
+    },
+  ),
+  480,
+);
+assert.equal(
+  paidLeaveMinutes({ ...partMonth.records[0], yukyu: "△", halfDayType: "am" }, { ...partHours, halfDayRule: "asymmetric_3_5_4h" }),
+  210,
+);
+assert.equal(
+  paidLeaveMinutes({ ...partMonth.records[0], yukyu: "△", halfDayType: "pm" }, { ...partHours, halfDayRule: "asymmetric_3_5_4h" }),
+  240,
+);
+const partExcel = new ExcelJS.Workbook();
+await partExcel.xlsx.load((await renderAttendanceWorkbook(partMonth, partHours)) as unknown as ArrayBuffer);
+const partSheet = partExcel.getWorksheet(SHEET_NAME.pt);
+assert.ok(partSheet);
+assert.equal(footerCell(partSheet, "勤務時間合計"), "4時間（4.0時間）");
+assert.equal(footerCell(partSheet, "有休時間合計"), "13.5時間（取得日数: 2.5日）");
+assert.equal(footerCell(partSheet, "支給対象時間"), "17時間30分（17.5時間）");
 
 console.log("ok");
 }

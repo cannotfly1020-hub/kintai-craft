@@ -1,4 +1,5 @@
-import type { DailyRecord, JobType, LeaveMark, MonthlyAttendance, KnownShiftCode } from "@/types/kintai";
+import type { DailyRecord, DayShiftSetting, HalfDayRuleType, JobType, LeaveMark, MonthlyAttendance, KnownShiftCode } from "@/types/kintai";
+import { parseISODate } from "@/lib/date";
 import { shiftFor } from "@/lib/shifts";
 import { formatMinutesJa, parseDurationMinutes, parseHHMM, formatHHMM, scheduledWorkMinutes } from "@/lib/time";
 
@@ -20,6 +21,8 @@ export interface MonthSummary {
   overtimeMinutes: number;
   shortageMinutes: number;
   workedMinutes: number;
+  paidLeaveMinutes: number;
+  payableMinutes: number;
   attendanceDays: number;
   lunchCount: number;
   lunchAmount: number;
@@ -90,6 +93,32 @@ export function shiftMarkFor(record: DailyRecord): LeaveMark {
   return record.halfDayType === "none" ? "○" : "△";
 }
 
+export interface HoursContext {
+  halfDayRule: HalfDayRuleType;
+  contractHoursPerDay?: number;
+  weeklySchedule?: Record<number, DayShiftSetting>;
+}
+
+function scheduledMinutesOn(date: string, context?: HoursContext): number {
+  const day = context?.weeklySchedule?.[parseISODate(date).getDay()];
+  if (day && !day.isHoliday && day.scheduledMinutes > 0) return day.scheduledMinutes;
+  const hours = context?.contractHoursPerDay;
+  if (hours && hours > 0) return Math.round(hours * 60);
+  return 240;
+}
+
+export function paidLeaveMinutes(record: DailyRecord, context?: HoursContext): number {
+  const full = scheduledMinutesOn(record.date, context);
+  if (record.yukyu === "○") return full;
+  const half = record.yukyu === "△" || record.halfDayType === "am" || record.halfDayType === "pm";
+  if (!half) return 0;
+  if (context?.halfDayRule === "asymmetric_3_5_4h") {
+    if (record.halfDayType === "am") return 210;
+    if (record.halfDayType === "pm") return 240;
+  }
+  return Math.round(full / 2);
+}
+
 export function workedMinutes(record: DailyRecord): number {
   if (hasFullLeave(record) || record.shiftCode === "明け" || !record.clockIn || !record.clockOut) return 0;
   return scheduledWorkMinutes(record.clockIn, record.clockOut, record.breakMinutes);
@@ -108,9 +137,9 @@ export function attendanceUnits(record: DailyRecord): number {
 export function noteForExport(record: DailyRecord, job?: JobType): string {
   const tag =
     record.halfDayType === "am"
-      ? "AM半休"
+      ? "午前半休"
       : record.halfDayType === "pm"
-        ? "PM半休"
+        ? "午後半休"
         : record.halfDayType === "am_off"
           ? "午前休"
           : record.halfDayType === "pm_off"
@@ -192,7 +221,7 @@ export function computeDeviation(
   };
 }
 
-export function summarize(attendance: MonthlyAttendance): MonthSummary {
+export function summarize(attendance: MonthlyAttendance, hours?: HoursContext): MonthSummary {
   const summary: MonthSummary = {
     koukyu: 0,
     kekkin: 0,
@@ -203,6 +232,8 @@ export function summarize(attendance: MonthlyAttendance): MonthSummary {
     overtimeMinutes: 0,
     shortageMinutes: 0,
     workedMinutes: 0,
+    paidLeaveMinutes: 0,
+    payableMinutes: 0,
     attendanceDays: 0,
     lunchCount: attendance.lunchCount,
     lunchAmount: attendance.lunchCount * attendance.lunchUnitPrice,
@@ -217,6 +248,7 @@ export function summarize(attendance: MonthlyAttendance): MonthSummary {
     summary.yukyu += markValue(record.yukyu);
     summary.attendanceDays += attendanceUnits(record);
     summary.workedMinutes += workedMinutes(record);
+    summary.paidLeaveMinutes += paidLeaveMinutes(record, hours);
     summary.overtimeMinutes += record.overtimeMinutes;
 
     const shortage = parseDurationMinutes(record.shortageTime);
@@ -231,6 +263,7 @@ export function summarize(attendance: MonthlyAttendance): MonthSummary {
     }
   }
 
+  summary.payableMinutes = summary.workedMinutes + summary.paidLeaveMinutes;
   summary.paidLeaveRemaining = roundDay(attendance.initialPaidLeave - summary.yukyu);
   summary.koukyu = roundDay(summary.koukyu);
   summary.kekkin = roundDay(summary.kekkin);

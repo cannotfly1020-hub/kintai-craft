@@ -1,7 +1,8 @@
 import path from "node:path";
 import ExcelJS from "exceljs";
 import type { DailyRecord, JobType, MonthlyAttendance } from "@/types/kintai";
-import { exportShiftCode, noteForExport, overtimeLabel, shiftMarkFor, splitOvertimeSpan, summarize } from "@/lib/calc";
+import { exportShiftCode, noteForExport, overtimeLabel, shiftMarkFor, splitOvertimeSpan, summarize, type HoursContext } from "@/lib/calc";
+import { formatDayCount, formatPaidLeaveHours, formatWorkedHoursLabel } from "@/lib/time";
 import { formatISODate, reiwaYear } from "@/lib/date";
 import { createAttendanceTemplate } from "@/lib/excel/template";
 import {
@@ -24,17 +25,17 @@ export function templateFilePath(): string {
   return path.join(process.cwd(), "public", "templates", TEMPLATE_FILE);
 }
 
-export async function renderAttendance(attendance: MonthlyAttendance): Promise<Buffer> {
+export async function renderAttendance(attendance: MonthlyAttendance, hours?: HoursContext): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(templateFilePath());
-  writeAttendance(workbook, attendance);
+  writeAttendance(workbook, attendance, hours);
   const raw = await workbook.xlsx.writeBuffer();
   return Buffer.from(raw);
 }
 
-export async function renderAttendanceWorkbook(attendance: MonthlyAttendance): Promise<Buffer> {
+export async function renderAttendanceWorkbook(attendance: MonthlyAttendance, hours?: HoursContext): Promise<Buffer> {
   const workbook = createAttendanceTemplate();
-  writeAttendance(workbook, attendance);
+  writeAttendance(workbook, attendance, hours);
   const raw = await workbook.xlsx.writeBuffer();
   return Buffer.from(raw);
 }
@@ -53,11 +54,11 @@ export function resolveJobSheet(workbook: ExcelJS.Workbook, job: JobType): { job
   throw new Error("原本に出力できるシートがありません");
 }
 
-function writeAttendance(workbook: ExcelJS.Workbook, attendance: MonthlyAttendance) {
+function writeAttendance(workbook: ExcelJS.Workbook, attendance: MonthlyAttendance, hours?: HoursContext) {
   const resolved = resolveJobSheet(workbook, attendance.jobType);
   const sheet = resolved.sheet;
   const columns = columnsFor(resolved.job);
-  const summary = summarize(attendance);
+  const summary = summarize(attendance, hours);
   const byDate = new Map(attendance.records.map((record) => [record.date, record]));
 
   setValue(sheet, ERA_YEAR_CELL, reiwaYear(attendance.year));
@@ -92,6 +93,9 @@ function writeAttendance(workbook: ExcelJS.Workbook, attendance: MonthlyAttendan
     summary.lunchAmount,
     summary.lateEarlyCount,
     summary.underHalfDayCount,
+    formatWorkedHoursLabel(summary.workedMinutes),
+    `${formatPaidLeaveHours(summary.paidLeaveMinutes)}（取得日数: ${formatDayCount(summary.yukyu)}日）`,
+    formatWorkedHoursLabel(summary.payableMinutes),
   ];
   totals.forEach((value, index) => {
     setValue(sheet, sheet.getCell(footer + 1 + index, 3).address, value);

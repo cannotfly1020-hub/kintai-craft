@@ -7,8 +7,16 @@ export const SHIFT_PATTERN_LIMIT = 5;
 export const EMPLOYMENT_LABEL: Record<EmploymentType, string> = {
   full_time: "常勤",
   short_time: "時短",
-  part_time: "パート",
+  part_time: "パート（非常勤）",
 };
+
+export function defaultContractHours(patterns: Pick<CustomShiftPattern, "startTime" | "endTime" | "breakMinutes">[]): number {
+  const first = patterns.find((item) => item.startTime && item.endTime);
+  if (!first) return 4;
+  const minutes = patternScheduledMinutes(first);
+  if (minutes <= 0) return 4;
+  return Math.round((minutes / 60) * 10) / 10;
+}
 
 export function defaultEmployment(role: StaffRole): EmploymentType {
   return role === "part_timer" ? "part_time" : "full_time";
@@ -23,7 +31,7 @@ export function defaultShiftPatterns(role: StaffRole, employment: EmploymentType
   }
   if (employment === "part_time") {
     return [
-      pattern("shift_am", "AMパート", "08:30", "12:30", 0, "D"),
+      pattern("shift_am", "午前パート", "08:30", "12:30", 0, "D"),
       pattern("shift_pm", "午後パート", "13:00", "17:00", 0, "午後"),
     ];
   }
@@ -65,8 +73,22 @@ export function patternScheduledMinutes(pattern: Pick<CustomShiftPattern, "start
 }
 
 export function patternButtonLabel(pattern: Pick<CustomShiftPattern, "label" | "startTime" | "endTime">): string {
+  const label = jaShiftText(pattern.label.trim() || "無題");
   const end = crossesMidnight(pattern.startTime, pattern.endTime) ? `翌${pattern.endTime}` : pattern.endTime;
-  return `${pattern.label.trim() || "無題"} (${pattern.startTime}-${end})`;
+  return `${label} (${pattern.startTime}-${end})`;
+}
+
+/** 画面・備考向けに AM/PM を午前/午後へ揃える。 */
+export function jaShiftText(value: string): string {
+  return value
+    .replace(/AM半休/g, "午前半休")
+    .replace(/PM半休/g, "午後半休")
+    .replace(/AMパート/g, "午前パート")
+    .replace(/PMパート/g, "午後パート")
+    .replace(/\bAM\b/g, "午前")
+    .replace(/\bPM\b/g, "午後")
+    .replace(/AM/g, "午前")
+    .replace(/PM/g, "午後");
 }
 
 export function patternShiftCode(pattern: Pick<CustomShiftPattern, "label" | "shiftCode">): string {
@@ -135,14 +157,16 @@ export function normalizePatterns(value: unknown): CustomShiftPattern[] {
     if (typeof raw.id !== "string" || !raw.id.trim()) continue;
     const startTime = typeof raw.startTime === "string" ? raw.startTime : "";
     const endTime = typeof raw.endTime === "string" ? raw.endTime : "";
+    const label = typeof raw.label === "string" ? jaShiftText(raw.label) : "";
+    const shiftCode = typeof raw.shiftCode === "string" ? jaShiftText(raw.shiftCode) : "";
     patterns.push(
       withOvernight({
         id: raw.id.trim(),
-        label: typeof raw.label === "string" ? raw.label : "",
+        label,
         startTime,
         endTime,
         breakMinutes: Number(raw.breakMinutes) || 0,
-        shiftCode: typeof raw.shiftCode === "string" ? raw.shiftCode : "",
+        shiftCode,
         isOvernight: Boolean(raw.isOvernight),
       }),
     );

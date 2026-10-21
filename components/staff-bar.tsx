@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { StaffMember } from "@/lib/staff";
 import { HALF_RULE_LABEL, ROLE_LABEL, WEEKDAY_NAMES, dayFromPattern, dayFromShiftCode, holidayDay, presetForRole, recomputeScheduled } from "@/lib/schedule";
-import { blankPattern, defaultShiftPatterns, EMPLOYMENT_LABEL, patternButtonLabel, patternScheduledMinutes, SHIFT_PATTERN_LIMIT, withOvernight } from "@/lib/shift-patterns";
+import { blankPattern, defaultContractHours, defaultShiftPatterns, EMPLOYMENT_LABEL, patternButtonLabel, patternScheduledMinutes, SHIFT_PATTERN_LIMIT, withOvernight } from "@/lib/shift-patterns";
 import { JOB_LABEL, SHIFTS, shiftLabel, shiftsForJob } from "@/lib/shifts";
 import { formatHours } from "@/lib/time";
 import type { CustomShiftPattern, DayShiftSetting, EmploymentType, HalfDayRuleType, JobType, ShiftCode, StaffRole } from "@/types/kintai";
@@ -104,6 +104,8 @@ function StaffForm({
     initialPaidLeave: 10,
     employmentType: "full_time" as const,
     shiftPatterns: defaultShiftPatterns("pt_outpatient", "full_time"),
+    contractHoursPerDay: undefined,
+    hourlyWage: undefined,
   };
   const [name, setName] = useState(initial?.name ?? "");
   const [role, setRole] = useState<StaffRole>(seed.role);
@@ -111,45 +113,67 @@ function StaffForm({
   const [sheetType, setSheetType] = useState(seed.sheetType);
   const [paidLeave, setPaidLeave] = useState(String(seed.initialPaidLeave));
   const [employmentType, setEmploymentType] = useState<EmploymentType>(seed.employmentType);
+  const [contractHours, setContractHours] = useState(seed.contractHoursPerDay != null ? String(seed.contractHoursPerDay) : "");
+  const [hourlyWage, setHourlyWage] = useState(seed.hourlyWage != null ? String(seed.hourlyWage) : "");
   const [shiftPatterns, setShiftPatterns] = useState<CustomShiftPattern[]>(() => seed.shiftPatterns.map((item) => ({ ...item })));
-  const [weeklySchedule, setWeeklySchedule] = useState(() => cloneWeek(seed.weeklySchedule));
+  const [weeklySchedule, setWeeklySchedule] = useState(() => linkWeekToPatterns(cloneWeek(seed.weeklySchedule), seed.shiftPatterns));
   const [error, setError] = useState("");
-  const rememberedWork = useRef(rememberWorkDays(seed.weeklySchedule));
+  const rememberedWork = useRef(rememberWorkDays(weeklySchedule));
+
+  function applyPatterns(nextPatterns: CustomShiftPattern[], week: Record<number, DayShiftSetting>) {
+    const linked = linkWeekToPatterns(week, nextPatterns);
+    rememberedWork.current = rememberWorkDays(linked);
+    setShiftPatterns(nextPatterns.map((item) => ({ ...item })));
+    setWeeklySchedule(linked);
+  }
 
   function changeRole(next: StaffRole) {
     setRole(next);
     if (next === "custom") return;
     const preset = presetForRole(next);
-    const week = cloneWeek(preset.weeklySchedule);
-    rememberedWork.current = rememberWorkDays(week);
+    const patterns = defaultShiftPatterns(next, employmentType);
     setHalfDayRule(preset.halfDayRule);
     setSheetType(preset.sheetType);
-    setWeeklySchedule(week);
-    setShiftPatterns(defaultShiftPatterns(next, employmentType));
+    applyPatterns(patterns, cloneWeek(preset.weeklySchedule));
   }
 
   function changeEmployment(next: EmploymentType) {
+    const patterns = role === "custom" ? shiftPatterns : defaultShiftPatterns(role, next);
     setEmploymentType(next);
-    if (role === "custom") return;
-    setShiftPatterns(defaultShiftPatterns(role, next));
+    if (role !== "custom") {
+      setWeeklySchedule((current) => {
+        const linked = assignPatternsToWeek(current, patterns);
+        rememberedWork.current = rememberWorkDays(linked);
+        return linked;
+      });
+      setShiftPatterns(patterns.map((item) => ({ ...item })));
+    }
+    if (next === "part_time") {
+      setContractHours((current) => {
+        const parsed = Number(current);
+        return parsed > 0 ? current : String(defaultContractHours(patterns));
+      });
+    }
   }
 
   function updatePattern(id: string, patch: Partial<CustomShiftPattern>) {
-    const source = shiftPatterns.find((item) => item.id === id);
-    if (!source) return;
-    const updated = withOvernight({ ...source, ...patch });
-    setShiftPatterns((current) => current.map((item) => (item.id === id ? updated : item)));
-    setWeeklySchedule((current) => {
-      let changed = false;
-      const next = { ...current };
-      for (let index = 0; index < 7; index += 1) {
-        const day = next[index];
-        if (!day || day.patternId !== id || day.isHoliday) continue;
-        next[index] = dayFromPattern(updated);
-        rememberedWork.current = { ...rememberedWork.current, [index]: { ...next[index] } };
-        changed = true;
-      }
-      return changed ? next : current;
+    setShiftPatterns((current) => {
+      const source = current.find((item) => item.id === id);
+      if (!source) return current;
+      const updated = withOvernight({ ...source, ...patch });
+      setWeeklySchedule((week) => {
+        let changed = false;
+        const next = { ...week };
+        for (let index = 0; index < 7; index += 1) {
+          const day = next[index];
+          if (!day || day.patternId !== id || day.isHoliday) continue;
+          next[index] = dayFromPattern(updated);
+          rememberedWork.current = { ...rememberedWork.current, [index]: { ...next[index] } };
+          changed = true;
+        }
+        return changed ? next : week;
+      });
+      return current.map((item) => (item.id === id ? updated : item));
     });
   }
 
@@ -184,32 +208,48 @@ function StaffForm({
           patternId: keepsLink ? patch.patternId ?? "" : "",
         }),
       };
-      if (!nextDay.isHoliday && nextDay.shiftCode) {
+      if (!nextDay.isHoliday && (nextDay.shiftCode || nextDay.startTime)) {
         rememberedWork.current = { ...rememberedWork.current, [index]: { ...nextDay } };
       }
       return { ...current, [index]: nextDay };
     });
   }
 
-  function changeSymbol(index: number, value: string) {
-    if (!value) {
-      putDay(index, { ...holidayDay(), patternId: "" });
+  function handleSchedulePatternSelect(index: number, selectedValue: string) {
+    if (!selectedValue) {
+      const cleared = holidayDay();
+      rememberedWork.current = { ...rememberedWork.current };
+      delete rememberedWork.current[index];
+      setWeeklySchedule((current) => ({ ...current, [index]: cleared }));
       return;
     }
-    if (value.startsWith("pattern:")) {
-      const pattern = shiftPatterns.find((item) => item.id === value.slice("pattern:".length));
+    if (selectedValue.startsWith("pattern:")) {
+      const patternId = selectedValue.slice("pattern:".length);
+      const pattern = shiftPatterns.find((item) => item.id === patternId);
       if (!pattern) return;
       const next = dayFromPattern(pattern);
-      rememberedWork.current = { ...rememberedWork.current, [index]: next };
+      rememberedWork.current = { ...rememberedWork.current, [index]: { ...next } };
       setWeeklySchedule((current) => ({ ...current, [index]: next }));
       return;
     }
-    putDay(index, { ...dayFromShiftCode(value), patternId: "" });
+    const fromPalette = shiftPatterns.find(
+      (item) => item.id === selectedValue || item.label === selectedValue || (item.shiftCode.trim() || item.label.trim()) === selectedValue,
+    );
+    if (fromPalette) {
+      const next = dayFromPattern(fromPalette);
+      rememberedWork.current = { ...rememberedWork.current, [index]: { ...next } };
+      setWeeklySchedule((current) => ({ ...current, [index]: next }));
+      return;
+    }
+    putDay(index, { ...dayFromShiftCode(selectedValue), patternId: "" });
   }
 
   function symbolValue(day: DayShiftSetting): string {
     if (day.isHoliday) return "";
-    if (day.patternId && shiftPatterns.some((item) => item.id === day.patternId)) return `pattern:${day.patternId}`;
+    const linked = day.patternId && shiftPatterns.find((item) => item.id === day.patternId);
+    if (linked) return `pattern:${linked.id}`;
+    const matched = matchPattern(day, shiftPatterns);
+    if (matched) return `pattern:${matched.id}`;
     return day.shiftCode;
   }
 
@@ -262,6 +302,8 @@ function StaffForm({
       return;
     }
     const leave = Number(paidLeave);
+    const contract = Number(contractHours);
+    const wage = Number(hourlyWage);
     onSave({
       name: trimmed,
       role,
@@ -271,6 +313,8 @@ function StaffForm({
       weeklySchedule,
       employmentType,
       shiftPatterns: shiftPatterns.map((item) => withOvernight({ ...item, label: item.label.trim() })),
+      contractHoursPerDay: employmentType === "part_time" && contract > 0 ? Math.round(contract * 10) / 10 : undefined,
+      hourlyWage: employmentType === "part_time" && wage > 0 ? Math.round(wage) : undefined,
     });
   }
 
@@ -326,6 +370,35 @@ function StaffForm({
               ))}
             </select>
           </label>
+          {employmentType === "part_time" ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-sm">
+                <Label htmlFor="new-staff-contract">1日の契約時間（有休換算用）</Label>
+                <Input
+                  id="new-staff-contract"
+                  type="number"
+                  min={0.5}
+                  max={24}
+                  step={0.5}
+                  value={contractHours}
+                  onChange={(event) => setContractHours(event.target.value)}
+                />
+                <span className="text-xs text-muted-foreground">終日有休は曜日の所定を優先し、所定がない日はこの時間です。初期値は4.0時間です。</span>
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                <Label htmlFor="new-staff-wage">時給（任意）</Label>
+                <Input
+                  id="new-staff-wage"
+                  type="number"
+                  min={0}
+                  step={10}
+                  value={hourlyWage}
+                  placeholder="1200"
+                  onChange={(event) => setHourlyWage(event.target.value)}
+                />
+              </label>
+            </div>
+          ) : null}
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm font-medium">マイ・シフトパレット（最大{SHIFT_PATTERN_LIMIT}枠）</p>
@@ -478,7 +551,7 @@ function StaffForm({
                     aria-label={`${label} シフト`}
                     className={field}
                     value={symbolValue(day)}
-                    onChange={(event) => changeSymbol(index, event.target.value)}
+                    onChange={(event) => handleSchedulePatternSelect(index, event.target.value)}
                   >
                     <option value="">--（公休 / 指定なし）</option>
                     {shiftPatterns.map((pattern) => (
@@ -486,12 +559,19 @@ function StaffForm({
                         {patternButtonLabel(pattern)}
                       </option>
                     ))}
-                    {shiftChoices.map((shift) => (
-                      <option key={shift.code} value={shift.code}>
-                        {shift.label}
-                      </option>
-                    ))}
-                    {day.shiftCode && !day.patternId && !shiftChoices.some((shift) => shift.code === day.shiftCode) ? (
+                    {shiftChoices.length > 0 ? (
+                      <optgroup label="原本の時間帯">
+                        {shiftChoices.map((shift) => (
+                          <option key={shift.code} value={shift.code}>
+                            {shift.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : null}
+                    {day.shiftCode &&
+                    !matchPattern(day, shiftPatterns) &&
+                    !(day.patternId && shiftPatterns.some((pattern) => pattern.id === day.patternId)) &&
+                    !shiftChoices.some((shift) => shift.code === day.shiftCode) ? (
                       <option value={day.shiftCode}>{shiftLabel(day.shiftCode)}</option>
                     ) : null}
                   </select>
@@ -539,7 +619,74 @@ function rememberWorkDays(week: Record<number, DayShiftSetting>): Partial<Record
   const remembered: Partial<Record<number, DayShiftSetting>> = {};
   for (let index = 0; index < 7; index += 1) {
     const day = week[index];
-    if (day && !day.isHoliday && day.shiftCode) remembered[index] = { ...day };
+    if (day && !day.isHoliday && (day.shiftCode || day.startTime)) remembered[index] = { ...day };
   }
   return remembered;
+}
+
+function matchPattern(day: DayShiftSetting, patterns: CustomShiftPattern[]): CustomShiftPattern | null {
+  if (day.isHoliday) return null;
+  if (day.patternId) {
+    const linked = patterns.find((item) => item.id === day.patternId);
+    if (linked) return linked;
+  }
+  const byTime = patterns.find(
+    (item) =>
+      item.startTime === day.startTime &&
+      item.endTime === day.endTime &&
+      Number(item.breakMinutes) === Number(day.breakMinutes),
+  );
+  if (byTime) return byTime;
+  const code = day.shiftCode.trim();
+  if (!code) return null;
+  return (
+    patterns.find((item) => item.shiftCode.trim() === code || item.label.trim() === code || (item.shiftCode.trim() || item.label.trim()) === code) ??
+    null
+  );
+}
+
+/** 曜日の所定をマイ・シフトへ紐づけ、一致する枠があれば時間も揃える。 */
+function linkWeekToPatterns(
+  week: Record<number, DayShiftSetting>,
+  patterns: CustomShiftPattern[],
+): Record<number, DayShiftSetting> {
+  const next = cloneWeek(week);
+  for (let index = 0; index < 7; index += 1) {
+    const day = next[index];
+    if (!day || day.isHoliday) {
+      next[index] = holidayDay();
+      continue;
+    }
+    const matched = matchPattern(day, patterns);
+    if (matched) {
+      next[index] = dayFromPattern(matched);
+      continue;
+    }
+    if (day.scheduledMinutes > 0) {
+      const byMinutes = patterns.find((item) => patternScheduledMinutes(item) === day.scheduledMinutes);
+      if (byMinutes) {
+        next[index] = dayFromPattern(byMinutes);
+        continue;
+      }
+    }
+    next[index] = { ...day, patternId: "" };
+  }
+  return next;
+}
+
+/** 雇用形態変更時など、紐づかない出勤日はマイ・シフトへ寄せる。 */
+function assignPatternsToWeek(
+  week: Record<number, DayShiftSetting>,
+  patterns: CustomShiftPattern[],
+): Record<number, DayShiftSetting> {
+  const linked = linkWeekToPatterns(week, patterns);
+  if (patterns.length === 0) return linked;
+  for (let index = 0; index < 7; index += 1) {
+    const day = linked[index];
+    if (!day || day.isHoliday || day.patternId) continue;
+    const half = patterns.find((item) => patternScheduledMinutes(item) <= 240) ?? patterns[0];
+    const full = patterns.find((item) => patternScheduledMinutes(item) > 240) ?? patterns[0];
+    linked[index] = dayFromPattern(day.scheduledMinutes > 0 && day.scheduledMinutes <= 240 ? half : full);
+  }
+  return linked;
 }

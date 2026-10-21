@@ -10,6 +10,7 @@ export function ScheduleBar({
   patterns,
   activePatternId,
   canApplyToday,
+  showAke = false,
   onApplyMonth,
   onApplyPattern,
   onAke,
@@ -21,6 +22,7 @@ export function ScheduleBar({
   patterns: CustomShiftPattern[];
   activePatternId: string;
   canApplyToday: boolean;
+  showAke?: boolean;
   onApplyMonth: () => void;
   onApplyPattern: (pattern: CustomShiftPattern) => void;
   onAke: () => void;
@@ -47,6 +49,7 @@ export function ScheduleBar({
             <button
               key={pattern.id}
               type="button"
+              aria-label={patternButtonLabel(pattern)}
               aria-pressed={selected}
               disabled={!canApplyToday}
               onClick={() => onApplyPattern(pattern)}
@@ -61,15 +64,17 @@ export function ScheduleBar({
             </button>
           );
         })}
-        <button
-          type="button"
-          aria-pressed={activePatternId === "ake"}
-          disabled={!canApplyToday}
-          onClick={onAke}
-          className="rounded-full border border-border bg-background px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
-        >
-          明け
-        </button>
+        {showAke ? (
+          <button
+            type="button"
+            aria-pressed={activePatternId === "ake"}
+            disabled={!canApplyToday}
+            onClick={onAke}
+            className="rounded-full border border-border bg-background px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
+          >
+            明け
+          </button>
+        ) : null}
         <button
           type="button"
           disabled={!canApplyToday}

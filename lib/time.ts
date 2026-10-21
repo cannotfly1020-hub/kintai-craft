@@ -70,6 +70,20 @@ export function formatHours(totalMinutes: number): string {
   return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
 }
 
+export function formatDecimalHours(totalMinutes: number): string {
+  return (Math.max(0, totalMinutes) / 60).toFixed(1);
+}
+
+export function formatWorkedHoursLabel(totalMinutes: number): string {
+  const minutes = Math.max(0, Math.round(totalMinutes));
+  const clock = formatMinutesJa(minutes) || "0時間";
+  return `${clock}（${formatDecimalHours(minutes)}時間）`;
+}
+
+export function formatPaidLeaveHours(totalMinutes: number): string {
+  return `${formatDecimalHours(totalMinutes)}時間`;
+}
+
 export function formatDayCount(value: number): string {
   if (!Number.isFinite(value)) return "0";
   const rounded = Math.round(value * 10) / 10;
