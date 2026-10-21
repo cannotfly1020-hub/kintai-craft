@@ -1,4 +1,4 @@
-import type { DailyRecord, DayShiftSetting, HalfDayRuleType, MonthlyAttendance, ShiftCode, StaffRole } from "@/types/kintai";
+import type { CustomShiftPattern, DailyRecord, DayShiftSetting, HalfDayRuleType, MonthlyAttendance, ShiftCode, StaffRole } from "@/types/kintai";
 import { deriveRecord, emptyPatternFields } from "@/lib/records";
 import { expectedDuty, shiftFor, type DutyWindow } from "@/lib/shifts";
 import { crossesMidnight, formatHHMM, parseHHMM, scheduledWorkMinutes } from "@/lib/time";
@@ -195,7 +195,19 @@ export function halfWindow(
 }
 
 export function holidayDay(): DayShiftSetting {
-  return { startTime: "", endTime: "", breakMinutes: 0, scheduledMinutes: 0, shiftCode: "", isHoliday: true };
+  return { startTime: "", endTime: "", breakMinutes: 0, scheduledMinutes: 0, shiftCode: "", isHoliday: true, patternId: "" };
+}
+
+export function dayFromPattern(pattern: CustomShiftPattern): DayShiftSetting {
+  return recomputeScheduled({
+    startTime: pattern.startTime,
+    endTime: pattern.endTime,
+    breakMinutes: Number(pattern.breakMinutes) || 0,
+    scheduledMinutes: 0,
+    shiftCode: pattern.shiftCode.trim() || pattern.label.trim(),
+    isHoliday: false,
+    patternId: pattern.id,
+  });
 }
 
 export function dayFromShiftCode(code: ShiftCode): DayShiftSetting {

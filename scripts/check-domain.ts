@@ -16,7 +16,7 @@ import {
   emptyRecord,
 } from "../lib/records";
 import { applyAttendanceMode, applyPatternToMonth, applyPatternToPeriod } from "../lib/patterns";
-import { applyStaffDay, applyWeeklySchedule, dayFromShiftCode, presetForRole, recomputeScheduled } from "../lib/schedule";
+import { applyStaffDay, applyWeeklySchedule, dayFromPattern, dayFromShiftCode, presetForRole, recomputeScheduled } from "../lib/schedule";
 import { defaultShiftPatterns, patternScheduledMinutes } from "../lib/shift-patterns";
 import { createStaffId, normalizeStaffList, recordsKey } from "../lib/staff";
 import { expectedDuty, SHIFTS } from "../lib/shifts";
@@ -364,6 +364,14 @@ assert.equal(night.startTime, "16:00");
 assert.equal(night.endTime, "09:00");
 assert.equal(night.isOvernight, true);
 assert.equal(patternScheduledMinutes(night), 960);
+const nightDaySetting = dayFromPattern(night);
+assert.equal(nightDaySetting.patternId, night.id);
+assert.equal(nightDaySetting.shiftCode, "夜勤");
+assert.equal(nightDaySetting.startTime, "16:00");
+assert.equal(nightDaySetting.endTime, "09:00");
+assert.equal(nightDaySetting.breakMinutes, 60);
+assert.equal(nightDaySetting.isHoliday, false);
+assert.equal(nightDaySetting.scheduledMinutes, 960);
 const shortPatterns = defaultShiftPatterns("nurse", "short_time");
 assert.equal(shortPatterns[0].label, "時短");
 assert.equal(patternScheduledMinutes(shortPatterns[0]), 360);

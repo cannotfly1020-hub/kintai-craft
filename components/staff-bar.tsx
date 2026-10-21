@@ -3,8 +3,8 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { StaffMember } from "@/lib/staff";
-import { HALF_RULE_LABEL, ROLE_LABEL, WEEKDAY_NAMES, dayFromShiftCode, presetForRole, recomputeScheduled } from "@/lib/schedule";
-import { blankPattern, defaultShiftPatterns, EMPLOYMENT_LABEL, patternButtonLabel, patternScheduledMinutes, patternShiftCode, SHIFT_PATTERN_LIMIT, withOvernight } from "@/lib/shift-patterns";
+import { HALF_RULE_LABEL, ROLE_LABEL, WEEKDAY_NAMES, dayFromPattern, dayFromShiftCode, holidayDay, presetForRole, recomputeScheduled } from "@/lib/schedule";
+import { blankPattern, defaultShiftPatterns, EMPLOYMENT_LABEL, patternButtonLabel, patternScheduledMinutes, SHIFT_PATTERN_LIMIT, withOvernight } from "@/lib/shift-patterns";
 import { JOB_LABEL, SHIFTS, shiftsForJob } from "@/lib/shifts";
 import { formatHours } from "@/lib/time";
 import type { CustomShiftPattern, DayShiftSetting, EmploymentType, HalfDayRuleType, JobType, ShiftCode, StaffRole } from "@/types/kintai";
@@ -135,7 +135,34 @@ function StaffForm({
   }
 
   function updatePattern(id: string, patch: Partial<CustomShiftPattern>) {
-    setShiftPatterns((current) => current.map((item) => (item.id === id ? withOvernight({ ...item, ...patch }) : item)));
+    const source = shiftPatterns.find((item) => item.id === id);
+    if (!source) return;
+    const updated = withOvernight({ ...source, ...patch });
+    setShiftPatterns((current) => current.map((item) => (item.id === id ? updated : item)));
+    setWeeklySchedule((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (let index = 0; index < 7; index += 1) {
+        const day = next[index];
+        if (!day || day.patternId !== id || day.isHoliday) continue;
+        next[index] = dayFromPattern(updated);
+        rememberedWork.current = { ...rememberedWork.current, [index]: { ...next[index] } };
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }
+
+  function unlinkPattern(id: string) {
+    setShiftPatterns((current) => current.filter((item) => item.id !== id));
+    setWeeklySchedule((current) => {
+      const next = { ...current };
+      for (let index = 0; index < 7; index += 1) {
+        const day = next[index];
+        if (day?.patternId === id) next[index] = { ...day, patternId: "" };
+      }
+      return next;
+    });
   }
 
   function putDay(index: number, patch: Partial<DayShiftSetting>) {
@@ -147,8 +174,16 @@ function StaffForm({
         scheduledMinutes: 0,
         shiftCode: "" as ShiftCode,
         isHoliday: false,
+        patternId: "",
       };
-      const nextDay = { ...recomputeScheduled({ ...prev, ...patch }) };
+      const keepsLink = Object.prototype.hasOwnProperty.call(patch, "patternId");
+      const nextDay = {
+        ...recomputeScheduled({
+          ...prev,
+          ...patch,
+          patternId: keepsLink ? patch.patternId ?? "" : "",
+        }),
+      };
       if (!nextDay.isHoliday && nextDay.shiftCode) {
         rememberedWork.current = { ...rememberedWork.current, [index]: { ...nextDay } };
       }
@@ -157,30 +192,25 @@ function StaffForm({
   }
 
   function changeSymbol(index: number, value: string) {
+    if (!value) {
+      putDay(index, { ...holidayDay(), patternId: "" });
+      return;
+    }
     if (value.startsWith("pattern:")) {
       const pattern = shiftPatterns.find((item) => item.id === value.slice("pattern:".length));
       if (!pattern) return;
-      putDay(index, {
-        startTime: pattern.startTime,
-        endTime: pattern.endTime,
-        breakMinutes: pattern.breakMinutes,
-        shiftCode: patternShiftCode(pattern),
-        isHoliday: false,
-      });
+      const next = dayFromPattern(pattern);
+      rememberedWork.current = { ...rememberedWork.current, [index]: next };
+      setWeeklySchedule((current) => ({ ...current, [index]: next }));
       return;
     }
-    putDay(index, dayFromShiftCode(value));
+    putDay(index, { ...dayFromShiftCode(value), patternId: "" });
   }
 
   function symbolValue(day: DayShiftSetting): string {
-    const match = shiftPatterns.find(
-      (item) =>
-        patternShiftCode(item) === day.shiftCode &&
-        item.startTime === day.startTime &&
-        item.endTime === day.endTime &&
-        item.breakMinutes === day.breakMinutes,
-    );
-    return match ? `pattern:${match.id}` : day.shiftCode;
+    if (day.isHoliday) return "";
+    if (day.patternId && shiftPatterns.some((item) => item.id === day.patternId)) return `pattern:${day.patternId}`;
+    return day.shiftCode;
   }
 
   function toggleHoliday(index: number, on: boolean) {
@@ -362,7 +392,7 @@ function StaffForm({
                 <button
                   type="button"
                   className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-                  onClick={() => setShiftPatterns((current) => current.filter((pattern) => pattern.id !== item.id))}
+                  onClick={() => unlinkPattern(item.id)}
                 >
                   削除
                 </button>
@@ -426,7 +456,7 @@ function StaffForm({
                 isHoliday: true,
               };
               return (
-                <div key={label} className="grid grid-cols-[1.5rem_4.5rem_minmax(0,1fr)_minmax(0,1fr)_3.5rem_4.5rem_2.75rem] items-center gap-1 text-xs">
+                <div key={label} className="grid grid-cols-[1.5rem_4.5rem_minmax(0,1fr)_minmax(0,1fr)_3.5rem_minmax(9.5rem,1.4fr)_2.75rem] items-center gap-1 text-xs">
                   <span>{label}</span>
                   <label className="flex items-center gap-1">
                     <input
@@ -468,10 +498,10 @@ function StaffForm({
                     value={symbolValue(day)}
                     onChange={(event) => changeSymbol(index, event.target.value)}
                   >
-                    <option value="">—</option>
+                    <option value="">--（公休 / 指定なし）</option>
                     {shiftPatterns.map((pattern) => (
                       <option key={pattern.id} value={`pattern:${pattern.id}`}>
-                        {pattern.label.trim() || patternButtonLabel(pattern)}
+                        {patternButtonLabel(pattern)}
                       </option>
                     ))}
                     {shiftChoices.map((shift) => (
@@ -479,6 +509,9 @@ function StaffForm({
                         {shift.code}
                       </option>
                     ))}
+                    {day.shiftCode && !day.patternId && !shiftChoices.some((shift) => shift.code === day.shiftCode) ? (
+                      <option value={day.shiftCode}>{day.shiftCode}</option>
+                    ) : null}
                   </select>
                   <span className="tabular-nums text-muted-foreground" aria-label={`${label} 所定`}>
                     {day.isHoliday ? "0h" : `${formatHours(day.scheduledMinutes)}h`}

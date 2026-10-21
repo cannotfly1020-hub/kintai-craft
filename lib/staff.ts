@@ -238,6 +238,7 @@ function normalizeWeek(value: unknown, fallback: Record<number, DayShiftSetting>
       scheduledMinutes: Number(day.scheduledMinutes) || 0,
       shiftCode: isShiftCode(day.shiftCode) ? day.shiftCode : fallback[index].shiftCode,
       isHoliday: Boolean(day.isHoliday),
+      patternId: typeof day.patternId === "string" ? day.patternId : "",
     });
   }
   return week;

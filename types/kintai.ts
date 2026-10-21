@@ -37,6 +37,7 @@ export interface DayShiftSetting {
   scheduledMinutes: number;
   shiftCode: ShiftCode;
   isHoliday: boolean;
+  patternId?: string;
 }
 
 export type KnownShiftCode = "B-2" | "A-1" | "D" | "7.5H" | "free" | "";
