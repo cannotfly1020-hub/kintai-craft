@@ -16,7 +16,7 @@ import {
 } from "@/lib/records";
 import { dutyFromSetting } from "@/lib/schedule";
 import { contractFromRecord, patternButtonLabel, patternShiftCode } from "@/lib/shift-patterns";
-import { SHIFTS, describeShift, expectedDuty, shiftFor, shiftsForJob, type DutyWindow } from "@/lib/shifts";
+import { SHIFTS, describeShift, expectedDuty, shiftFor, shiftLabel, shiftsForJob, type DutyWindow } from "@/lib/shifts";
 import { formatHours, formatMinutesJa, scheduledWorkMinutes } from "@/lib/time";
 import type { CustomShiftPattern, DailyRecord, DayShiftSetting, HalfDayRuleType, JobType, LeaveMark } from "@/types/kintai";
 import { cn } from "@/lib/utils";
@@ -211,7 +211,7 @@ export function LedgerTable({
                     record.shiftCode !== "明け" &&
                     !shifts.some((item) => item.code === record.shiftCode) &&
                     !patterns.some((pattern) => pattern.id === record.patternId) ? (
-                      <option value={record.shiftCode}>{record.patternLabel || record.shiftCode}</option>
+                      <option value={record.shiftCode}>{record.patternLabel || shiftLabel(record.shiftCode)}</option>
                     ) : null}
                   </select>
                   {record.patternLabel ? <p className="mt-1 text-[10px] font-medium">{record.patternLabel}</p> : null}
@@ -264,7 +264,7 @@ export function LedgerTable({
                       className="mt-1 text-[10px] text-primary underline-offset-2 hover:underline"
                       onClick={() => onRecord(record.date, chooseShift(record, "D", scheduledMinutes))}
                     >
-                      Dを入れる
+                      半日を入れる
                     </button>
                   ) : null}
                 </td>

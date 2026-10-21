@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import type { StaffMember } from "@/lib/staff";
 import { HALF_RULE_LABEL, ROLE_LABEL, WEEKDAY_NAMES, dayFromPattern, dayFromShiftCode, holidayDay, presetForRole, recomputeScheduled } from "@/lib/schedule";
 import { blankPattern, defaultShiftPatterns, EMPLOYMENT_LABEL, patternButtonLabel, patternScheduledMinutes, SHIFT_PATTERN_LIMIT, withOvernight } from "@/lib/shift-patterns";
-import { JOB_LABEL, SHIFTS, shiftsForJob } from "@/lib/shifts";
+import { JOB_LABEL, SHIFTS, shiftLabel, shiftsForJob } from "@/lib/shifts";
 import { formatHours } from "@/lib/time";
 import type { CustomShiftPattern, DayShiftSetting, EmploymentType, HalfDayRuleType, JobType, ShiftCode, StaffRole } from "@/types/kintai";
 import { Button } from "@/components/ui/button";
@@ -341,7 +341,7 @@ function StaffForm({
             </div>
             {shiftPatterns.length === 0 ? <p className="text-xs text-muted-foreground">登録されたシフトはまだありません。</p> : null}
             {shiftPatterns.map((item) => (
-              <div key={item.id} className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_4rem_minmax(0,0.8fr)_auto_auto] items-center gap-1">
+              <div key={item.id} className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_4rem_auto_auto] items-center gap-1">
                 <input
                   aria-label={`${item.id} 名前`}
                   className={field}
@@ -372,14 +372,6 @@ function StaffForm({
                   value={item.breakMinutes}
                   onChange={(event) => updatePattern(item.id, { breakMinutes: Number(event.target.value) || 0 })}
                 />
-                <input
-                  aria-label={`${item.id} 記号`}
-                  className={field}
-                  list="shift-code-suggestions"
-                  value={item.shiftCode}
-                  placeholder="日勤"
-                  onChange={(event) => updatePattern(item.id, { shiftCode: event.target.value })}
-                />
                 <label className="flex items-center gap-1 text-xs">
                   <input
                     aria-label={`${item.id} 日またぎ`}
@@ -402,16 +394,6 @@ function StaffForm({
                 </span>
               </div>
             ))}
-            <datalist id="shift-code-suggestions">
-              <option value="B-2" />
-              <option value="A-1" />
-              <option value="D" />
-              <option value="7.5H" />
-              <option value="日勤" />
-              <option value="夜勤" />
-              <option value="時短" />
-              <option value="半日" />
-            </datalist>
           </div>
           <label className="flex flex-col gap-1 text-sm">
             <Label htmlFor="new-staff-half">半休ルール</Label>
@@ -493,7 +475,7 @@ function StaffForm({
                     onChange={(event) => putDay(index, { breakMinutes: Number(event.target.value) || 0, isHoliday: false })}
                   />
                   <select
-                    aria-label={`${label} 記号`}
+                    aria-label={`${label} シフト`}
                     className={field}
                     value={symbolValue(day)}
                     onChange={(event) => changeSymbol(index, event.target.value)}
@@ -506,11 +488,11 @@ function StaffForm({
                     ))}
                     {shiftChoices.map((shift) => (
                       <option key={shift.code} value={shift.code}>
-                        {shift.code}
+                        {shift.label}
                       </option>
                     ))}
                     {day.shiftCode && !day.patternId && !shiftChoices.some((shift) => shift.code === day.shiftCode) ? (
-                      <option value={day.shiftCode}>{day.shiftCode}</option>
+                      <option value={day.shiftCode}>{shiftLabel(day.shiftCode)}</option>
                     ) : null}
                   </select>
                   <span className="tabular-nums text-muted-foreground" aria-label={`${label} 所定`}>

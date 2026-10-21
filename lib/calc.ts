@@ -1,4 +1,4 @@
-import type { DailyRecord, LeaveMark, MonthlyAttendance, KnownShiftCode } from "@/types/kintai";
+import type { DailyRecord, JobType, LeaveMark, MonthlyAttendance, KnownShiftCode } from "@/types/kintai";
 import { shiftFor } from "@/lib/shifts";
 import { formatMinutesJa, parseDurationMinutes, parseHHMM, formatHHMM, scheduledWorkMinutes } from "@/lib/time";
 
@@ -44,9 +44,49 @@ export function hasFullLeave(record: DailyRecord): boolean {
   );
 }
 
+const SHEET_MINUTES: Record<JobType, { code: Exclude<KnownShiftCode, "" | "free">; minutes: number }[]> = {
+  pt: [
+    { code: "B-2", minutes: 480 },
+    { code: "D", minutes: 240 },
+  ],
+  rehab_part: [
+    { code: "A-1", minutes: 480 },
+    { code: "7.5H", minutes: 450 },
+    { code: "D", minutes: 240 },
+  ],
+};
+
+function matchScheduledMinutes(job: JobType, minutes: number | null): Exclude<KnownShiftCode, "" | "free"> | null {
+  if (minutes == null || minutes <= 0) return null;
+  return SHEET_MINUTES[job].find((column) => column.minutes === minutes)?.code ?? null;
+}
+
+function contractMinutes(record: DailyRecord): number | null {
+  if (!record.contractStart || !record.contractEnd) return null;
+  const minutes = scheduledWorkMinutes(record.contractStart, record.contractEnd, record.contractBreak || 0);
+  return minutes > 0 ? minutes : null;
+}
+
+function clockMinutes(record: DailyRecord): number | null {
+  if (!record.clockIn || !record.clockOut) return null;
+  const minutes = scheduledWorkMinutes(record.clockIn, record.clockOut, record.breakMinutes);
+  return minutes > 0 ? minutes : null;
+}
+
+export function exportShiftCode(job: JobType, record: DailyRecord): Exclude<KnownShiftCode, "" | "free"> | null {
+  if (record.shiftCode === "明け" || hasFullLeave(record)) return null;
+  if (record.contractStart && record.contractEnd) return matchScheduledMinutes(job, contractMinutes(record));
+  const known = shiftFor(record.shiftCode);
+  if (known && known.jobs.includes(job)) return known.code;
+  return matchScheduledMinutes(job, clockMinutes(record));
+}
+
 export function shiftMarkFor(record: DailyRecord): LeaveMark {
-  if (!record.shiftCode || record.shiftCode === "free" || record.shiftCode === "明け" || hasFullLeave(record)) return "";
-  if (!shiftFor(record.shiftCode)) return "";
+  if (record.shiftCode === "明け" || hasFullLeave(record)) return "";
+  const known = Boolean(shiftFor(record.shiftCode));
+  const timed = Boolean((record.contractStart && record.contractEnd) || (record.clockIn && record.clockOut));
+  if (!known && !timed) return "";
+  if ((record.shiftCode === "free" || !record.shiftCode) && !timed) return "";
   return record.halfDayType === "none" ? "○" : "△";
 }
 
@@ -65,7 +105,7 @@ export function attendanceUnits(record: DailyRecord): number {
   return 0;
 }
 
-export function noteForExport(record: DailyRecord): string {
+export function noteForExport(record: DailyRecord, job?: JobType): string {
   const tag =
     record.halfDayType === "am"
       ? "AM半休"
@@ -76,7 +116,7 @@ export function noteForExport(record: DailyRecord): string {
           : record.halfDayType === "pm_off"
             ? "午後休"
             : "";
-  const pattern = patternNote(record);
+  const pattern = job && exportShiftCode(job, record) ? "" : patternNote(record);
   const memo = record.note.trim();
   const text = pattern && !memo.includes(pattern) ? (memo ? `${pattern} ${memo}` : pattern) : memo;
   if (!tag) return text;
@@ -185,9 +225,9 @@ export function summarize(attendance: MonthlyAttendance): MonthSummary {
     if (shortage > 0 && shortage < UNDER_HALF_MINUTES) summary.underHalfDayCount += 1;
 
     const mark = shiftMarkFor(record);
-    const shift = shiftFor(record.shiftCode);
-    if (shift && mark) {
-      summary.shifts[shift.code] = (summary.shifts[shift.code] ?? 0) + markValue(mark);
+    const shiftCode = exportShiftCode(attendance.jobType, record);
+    if (shiftCode && mark) {
+      summary.shifts[shiftCode] = (summary.shifts[shiftCode] ?? 0) + markValue(mark);
     }
   }
 

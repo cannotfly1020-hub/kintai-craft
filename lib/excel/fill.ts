@@ -1,7 +1,7 @@
 import path from "node:path";
 import ExcelJS from "exceljs";
 import type { DailyRecord, JobType, MonthlyAttendance } from "@/types/kintai";
-import { noteForExport, overtimeLabel, shiftMarkFor, splitOvertimeSpan, summarize } from "@/lib/calc";
+import { exportShiftCode, noteForExport, overtimeLabel, shiftMarkFor, splitOvertimeSpan, summarize } from "@/lib/calc";
 import { formatISODate, reiwaYear } from "@/lib/date";
 import { createAttendanceTemplate } from "@/lib/excel/template";
 import {
@@ -70,7 +70,7 @@ function writeAttendance(workbook: ExcelJS.Workbook, attendance: MonthlyAttendan
   const dates = getPeriod(attendance.year, attendance.month).dates;
   for (let index = 0; index < dates.length && index < 31; index += 1) {
     const record = byDate.get(formatISODate(dates[index]));
-    writeDailyRow(sheet, DATA_START_ROW + index, columns, record);
+    writeDailyRow(sheet, DATA_START_ROW + index, columns, record, resolved.job);
   }
 
   const footer = footerStartRow();
@@ -113,6 +113,7 @@ function writeDailyRow(
   row: number,
   columns: ReturnType<typeof columnsFor>,
   record: DailyRecord | undefined,
+  job: JobType,
 ) {
   const writable = [
     columns.day,
@@ -138,15 +139,16 @@ function writeDailyRow(
   setMark(sheet, row, columns.tokki, record.tokki);
   setMark(sheet, row, columns.yukyu, record.yukyu);
   const shiftMark = shiftMarkFor(record);
+  const shiftCode = exportShiftCode(job, record);
   for (const shift of columns.shifts) {
-    setMark(sheet, row, shift.col, record.shiftCode === shift.code ? shiftMark : "");
+    setMark(sheet, row, shift.col, shiftCode === shift.code ? shiftMark : "");
   }
   const span = splitOvertimeSpan(record.overtimeSpan);
   setText(sheet, row, columns.otStart, span.start);
   setText(sheet, row, columns.otEnd, span.end);
   setText(sheet, row, columns.otText, overtimeLabel(record.overtimeMinutes));
   setText(sheet, row, columns.shortage, record.shortageTime);
-  setText(sheet, row, columns.note, noteForExport(record));
+  setText(sheet, row, columns.note, noteForExport(record, job));
 }
 
 function setMark(sheet: ExcelJS.Worksheet, row: number, col: number, mark: string) {

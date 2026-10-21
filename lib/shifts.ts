@@ -41,7 +41,7 @@ const EMPTY_DUTY: DutyWindow = {
 export const SHIFTS: Record<ShiftDefinition["code"], ShiftDefinition> = {
   "B-2": {
     code: "B-2",
-    label: "B-2 (8H)",
+    label: "日勤 (8H)",
     jobs: ["pt"],
     start: "09:00",
     end: "18:00",
@@ -54,7 +54,7 @@ export const SHIFTS: Record<ShiftDefinition["code"], ShiftDefinition> = {
   },
   "A-1": {
     code: "A-1",
-    label: "A-1 (8H)",
+    label: "フル (8H)",
     jobs: ["rehab_part"],
     start: "08:30",
     end: "17:30",
@@ -67,7 +67,7 @@ export const SHIFTS: Record<ShiftDefinition["code"], ShiftDefinition> = {
   },
   D: {
     code: "D",
-    label: "D (4H木土)",
+    label: "半日 (4H)",
     jobs: ["pt", "rehab_part"],
     start: "08:30",
     end: "12:30",
@@ -80,7 +80,7 @@ export const SHIFTS: Record<ShiftDefinition["code"], ShiftDefinition> = {
   },
   "7.5H": {
     code: "7.5H",
-    label: "7.5H",
+    label: "日勤 (7.5H)",
     jobs: ["rehab_part"],
     start: "08:30",
     end: "17:00",
@@ -96,6 +96,10 @@ export const SHIFTS: Record<ShiftDefinition["code"], ShiftDefinition> = {
 export function shiftFor(code: string): ShiftDefinition | null {
   if (code !== "B-2" && code !== "A-1" && code !== "D" && code !== "7.5H") return null;
   return SHIFTS[code];
+}
+
+export function shiftLabel(code: string): string {
+  return shiftFor(code)?.label || code;
 }
 
 export function shiftsForJob(job: JobType): ShiftDefinition[] {

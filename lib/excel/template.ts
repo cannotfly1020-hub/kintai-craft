@@ -69,7 +69,7 @@ function createSheet(workbook: ExcelJS.Workbook, job: JobType) {
     [columns.shortage, 11],
     [columns.note, 28],
   ]);
-  for (const shift of columns.shifts) widths.set(shift.col, 11);
+  for (const shift of columns.shifts) widths.set(shift.col, 12);
   for (let col = 1; col <= columns.lastCol; col += 1) {
     sheet.getColumn(col).width = widths.get(col) ?? 10;
   }
@@ -164,7 +164,7 @@ function paintColumnHeaders(sheet: ExcelJS.Worksheet, job: JobType) {
   }
 
   header(sheet, GROUP_HEADER_ROW, columns.koukyu, "休暇・区分");
-  header(sheet, GROUP_HEADER_ROW, columns.shifts[0].col, "勤務記号");
+  header(sheet, GROUP_HEADER_ROW, columns.shifts[0].col, "勤務");
   header(sheet, GROUP_HEADER_ROW, columns.otStart, "時間外・休日");
   header(sheet, GROUP_HEADER_ROW, columns.shortage, "欠勤・遅早出");
   header(sheet, GROUP_HEADER_ROW, columns.note, "備考");

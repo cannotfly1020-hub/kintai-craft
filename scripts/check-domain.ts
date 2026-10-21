@@ -347,6 +347,7 @@ const nightSummary = summarize({
   ),
 });
 assert.equal(nightSummary.workedMinutes, 960);
+assert.equal(nightSummary.shifts["A-1"] ?? 0, 0);
 const nightLate = editClocks(nightDay, { clockOut: "09:30" });
 assert.equal(nightLate.overtimeMinutes, 30);
 assert.equal(nightLate.overtimeSpan, "09:00〜09:30");
@@ -549,6 +550,74 @@ const paletteSheet = paletteBook.getWorksheet(SHEET_NAME.rehab_part);
 assert.ok(paletteSheet);
 assert.equal(paletteSheet.getCell(8, 7).value, null);
 assert.equal(paletteSheet.getCell(8, 14).value, "時短 09:00〜16:00");
+assert.equal(rehabSheet.getCell(6, 7).value, "勤務");
+assert.equal(rehabSheet.getCell(7, 7).value, "フル\n(8H)");
+assert.equal(rehabSheet.getCell(7, 8).value, "半日\n(4H)");
+assert.equal(rehabSheet.getCell(7, 9).value, "日勤\n(7.5H)");
+assert.equal(reloadedSheet.getCell(7, 7).value, "日勤\n(8H)");
+assert.equal(reloadedSheet.getCell(7, 8).value, "半日\n(4H)");
+assert.equal(SHIFTS["B-2"].label, "日勤 (8H)");
+assert.equal(SHIFTS.D.label, "半日 (4H)");
+
+const friendly = createAttendance({ year: 2026, month: 11, jobType: "pt", staffName: "ラベル" });
+friendly.records = friendly.records.map((record) => {
+  if (record.date === "2026-10-21") {
+    return applyShiftPattern(record, {
+      id: "day",
+      label: "日勤",
+      startTime: "09:00",
+      endTime: "18:00",
+      breakMinutes: 60,
+      shiftCode: "日勤",
+    });
+  }
+  if (record.date === "2026-10-22") {
+    return applyShiftPattern(record, {
+      id: "half",
+      label: "半日",
+      startTime: "08:30",
+      endTime: "12:30",
+      breakMinutes: 0,
+      shiftCode: "半日",
+    });
+  }
+  return record;
+});
+const friendlySummary = summarize(friendly);
+assert.equal(friendlySummary.shifts["B-2"], 1);
+assert.equal(friendlySummary.shifts.D, 1);
+const stayedLate = editClocks(
+  friendly.records.find((record) => record.date === "2026-10-21")!,
+  { clockOut: "19:30" },
+);
+assert.equal(stayedLate.overtimeMinutes, 90);
+friendly.records = friendly.records.map((record) => (record.date === "2026-10-21" ? stayedLate : record));
+const friendlyBook = new ExcelJS.Workbook();
+await friendlyBook.xlsx.load((await renderAttendanceWorkbook(friendly)) as unknown as ArrayBuffer);
+const friendlySheet = friendlyBook.getWorksheet(SHEET_NAME.pt);
+assert.ok(friendlySheet);
+assert.equal(friendlySheet.getCell(8, 7).value, "○");
+assert.equal(friendlySheet.getCell(8, 8).value, null);
+assert.equal(friendlySheet.getCell(8, 13).value, null);
+assert.equal(friendlySheet.getCell(9, 8).value, "○");
+assert.equal(friendlySheet.getCell(9, 7).value, null);
+
+const assistantDay = applyShiftPattern(emptyRecord(new Date(2026, 8, 21)), {
+  id: "seven",
+  label: "日勤",
+  startTime: "08:30",
+  endTime: "17:00",
+  breakMinutes: 60,
+  shiftCode: "日勤",
+});
+const assistantBook = createAttendance({ year: 2026, month: 10, jobType: "rehab_part", staffName: "助手" });
+assistantBook.records = assistantBook.records.map((record) => (record.date === "2026-09-21" ? assistantDay : record));
+const assistantExcel = new ExcelJS.Workbook();
+await assistantExcel.xlsx.load((await renderAttendanceWorkbook(assistantBook)) as unknown as ArrayBuffer);
+const assistantSheet = assistantExcel.getWorksheet(SHEET_NAME.rehab_part);
+assert.ok(assistantSheet);
+assert.equal(assistantSheet.getCell(8, 9).value, "○");
+assert.equal(assistantSheet.getCell(8, 7).value, null);
 
 console.log("ok");
 }

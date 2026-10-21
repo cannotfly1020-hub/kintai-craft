@@ -46,8 +46,8 @@ export function columnsFor(job: JobType): ColumnMap {
       tokki: 5,
       yukyu: 6,
       shifts: [
-        { code: "B-2", col: 7, header: "B-2\n(8H)" },
-        { code: "D", col: 8, header: "D\n(4H木土)" },
+        { code: "B-2", col: 7, header: "日勤\n(8H)" },
+        { code: "D", col: 8, header: "半日\n(4H)" },
       ],
       otStart: 9,
       otEnd: 10,
@@ -65,9 +65,9 @@ export function columnsFor(job: JobType): ColumnMap {
     tokki: 5,
     yukyu: 6,
     shifts: [
-      { code: "A-1", col: 7, header: "A-1\n(8H)" },
-      { code: "D", col: 8, header: "D\n(4H木土)" },
-      { code: "7.5H", col: 9, header: "7.5H" },
+      { code: "A-1", col: 7, header: "フル\n(8H)" },
+      { code: "D", col: 8, header: "半日\n(4H)" },
+      { code: "7.5H", col: 9, header: "日勤\n(7.5H)" },
     ],
     otStart: 10,
     otEnd: 11,
@@ -96,7 +96,7 @@ export function footerStartRow(): number {
 
 export function sheetLegend(job: JobType): string {
   if (job === "pt") {
-    return "○＝終日、△＝半日（0.5日）。有休の午前半休は3.5時間、午後半休は4.0時間。B-2は09:00–18:00（休憩1時間、実働8.0h、午前3.5h・午後4.5h）。Dは08:30–12:30（実働4.0h）。超え勤務は所定の始業前・終業後に在籍した分。";
+    return "○＝終日、△＝半日（0.5日）。有休の午前半休は3.5時間、午後半休は4.0時間。日勤 (8H) は09:00–18:00（休憩1時間、実働8.0h）。半日 (4H) は08:30–12:30（実働4.0h）。所定が8時間の日は日勤、4時間の日は半日の列に印を付けます。超え勤務は所定の始業前・終業後に在籍した分。";
   }
-  return "○＝終日、△＝半日（0.5日）。有休の午前半休は3.5時間、午後半休は4.0時間。A-1は08:30–17:30（休憩1時間、実働8.0h、午前3.5h・午後4.5h）。Dは08:30–12:30（実働4.0h）。7.5Hは08:30–17:00（休憩1時間、実働7.5h、午前3.5h・午後4.0h）。超え勤務は所定の始業前・終業後に在籍した分。";
+  return "○＝終日、△＝半日（0.5日）。有休の午前半休は3.5時間、午後半休は4.0時間。フル (8H) は08:30–17:30（休憩1時間、実働8.0h）。日勤 (7.5H) は08:30–17:00（休憩1時間、実働7.5h）。半日 (4H) は08:30–12:30（実働4.0h）。所定時間に合う列へ印を付けます。超え勤務は所定の始業前・終業後に在籍した分。";
 }
