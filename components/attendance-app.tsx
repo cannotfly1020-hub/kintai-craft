@@ -240,21 +240,12 @@ export function AttendanceApp() {
     setNotice(null);
     setExporting(true);
     try {
-      const response = await fetch("/api/export", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...current,
-          halfDayRule: activeStaff.halfDayRule,
-          contractHoursPerDay: activeStaff.contractHoursPerDay,
-          weeklySchedule: activeStaff.weeklySchedule,
-        }),
+      const { renderAttendanceBlob } = await import("@/lib/excel/export-client");
+      const blob = await renderAttendanceBlob(current, {
+        halfDayRule: activeStaff.halfDayRule,
+        contractHoursPerDay: activeStaff.contractHoursPerDay,
+        weeklySchedule: activeStaff.weeklySchedule,
       });
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(payload?.error || "Excelの作成に失敗しました");
-      }
-      const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;

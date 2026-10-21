@@ -11,7 +11,8 @@ import {
   summarize,
 } from "../lib/calc";
 import { holidayName } from "../lib/holidays";
-import { renderAttendance, renderAttendanceWorkbook, resolveJobSheet, writeAttendance } from "../lib/excel/fill";
+import { renderAttendanceWorkbook, resolveJobSheet, writeAttendance } from "../lib/excel/fill";
+import { renderAttendance } from "../lib/excel/render-file";
 import { createAttendanceTemplate } from "../lib/excel/template";
 import { SHEET_NAME } from "../lib/excel/layout";
 import { attendanceFileName } from "../lib/storage";

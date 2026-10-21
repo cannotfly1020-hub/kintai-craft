@@ -1,4 +1,3 @@
-import path from "node:path";
 import ExcelJS from "exceljs";
 import type { DailyRecord, JobType, MonthlyAttendance } from "@/types/kintai";
 import { exportShiftCode, noteForExport, overtimeLabel, shiftMarkFor, splitOvertimeSpan, summarize, type HoursContext } from "@/lib/calc";
@@ -15,23 +14,10 @@ import {
   NAME_CELL,
   PERIOD_CELL,
   SHEET_NAME,
-  TEMPLATE_FILE,
   columnsFor,
   footerStartRow,
 } from "@/lib/excel/layout";
 import { formatPeriodLabel, getPeriod } from "@/lib/period";
-
-export function templateFilePath(): string {
-  return path.join(process.cwd(), "public", "templates", TEMPLATE_FILE);
-}
-
-export async function renderAttendance(attendance: MonthlyAttendance, hours?: HoursContext): Promise<Buffer> {
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.readFile(templateFilePath());
-  writeAttendance(workbook, attendance, hours);
-  const raw = await workbook.xlsx.writeBuffer();
-  return Buffer.from(raw);
-}
 
 export async function renderAttendanceWorkbook(attendance: MonthlyAttendance, hours?: HoursContext): Promise<Buffer> {
   const workbook = createAttendanceTemplate();
