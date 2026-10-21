@@ -321,6 +321,13 @@ export function AttendanceApp() {
           }}
           onLeave={(kind) => applyLeave(today, kind)}
         />
+        <SummaryPanel
+          attendance={attendance}
+          employmentType={activeStaff.employmentType}
+          halfDayRule={activeStaff.halfDayRule}
+          contractHoursPerDay={activeStaff.contractHoursPerDay}
+          weeklySchedule={activeStaff.weeklySchedule}
+        />
         <Card>
           <CardHeader>
             <CardTitle>帳票ヘッダー</CardTitle>
@@ -456,13 +463,6 @@ export function AttendanceApp() {
           showAke={activeStaff.role === "nurse"}
           onRecord={updateRecord}
           onHalfMode={(date, mode) => setAttendance((current) => (current ? applyStaffDay(current, activeStaff, mode, date) : current))}
-        />
-        <SummaryPanel
-          attendance={attendance}
-          employmentType={activeStaff.employmentType}
-          halfDayRule={activeStaff.halfDayRule}
-          contractHoursPerDay={activeStaff.contractHoursPerDay}
-          weeklySchedule={activeStaff.weeklySchedule}
         />
       </main>
     </div>

@@ -18,11 +18,13 @@ import { dutyFromSetting } from "@/lib/schedule";
 import { contractFromRecord, patternButtonLabel, patternShiftCode } from "@/lib/shift-patterns";
 import { SHIFTS, describeShift, expectedDuty, shiftFor, shiftLabel, shiftsForJob, type DutyWindow } from "@/lib/shifts";
 import { formatHours, formatMinutesJa, scheduledWorkMinutes } from "@/lib/time";
+import { ledgerRowClass, shiftBadgeClass, shiftToneFromLabel, weekdayTextClass } from "@/lib/shift-ui";
 import type { CustomShiftPattern, DailyRecord, DayShiftSetting, HalfDayRuleType, JobType, LeaveMark } from "@/types/kintai";
 import { cn } from "@/lib/utils";
 
 const field =
-  "h-8 w-full rounded-md border border-input bg-background px-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40";
+  "h-9 w-full rounded-md border border-input bg-white/90 px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40";
+const monoField = cn(field, "font-mono tabular-nums");
 
 export function LedgerTable({
   jobType,
@@ -52,30 +54,32 @@ export function LedgerTable({
   const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
   return (
-    <div className="overflow-x-auto rounded-xl bg-card ring-1 ring-foreground/10">
+    <div className="overflow-x-auto rounded-2xl bg-card shadow-sm ring-1 ring-foreground/10">
       <table className="w-full min-w-[1240px] border-collapse text-sm">
-        <thead className="bg-muted/80 text-xs">
+        <thead className="bg-slate-100/90 text-xs text-slate-700">
           <tr className="border-b border-border">
-            <th className="px-2 py-2 text-left font-medium">日</th>
-            <th className="px-2 py-2 text-left font-medium">曜</th>
-            <th className="px-2 py-2 text-left font-medium">公休</th>
-            <th className="px-2 py-2 text-left font-medium">欠勤</th>
-            <th className="px-2 py-2 text-left font-medium">特忌</th>
-            <th className="px-2 py-2 text-left font-medium">有休</th>
-            <th className="px-2 py-2 text-left font-medium">半休</th>
-            <th className="px-2 py-2 text-left font-medium">勤務</th>
-            <th className="px-2 py-2 text-left font-medium">出勤</th>
-            <th className="px-2 py-2 text-left font-medium">退勤</th>
-            <th className="px-2 py-2 text-left font-medium">休憩</th>
-            <th className="px-2 py-2 text-left font-medium">時間外</th>
-            <th className="px-2 py-2 text-left font-medium">不足</th>
-            <th className="px-2 py-2 text-left font-medium">備考</th>
+            <th className="px-3 py-3 text-left font-semibold">日</th>
+            <th className="px-3 py-3 text-left font-semibold">曜</th>
+            <th className="px-3 py-3 text-left font-semibold">公休</th>
+            <th className="px-3 py-3 text-left font-semibold">欠勤</th>
+            <th className="px-3 py-3 text-left font-semibold">特忌</th>
+            <th className="px-3 py-3 text-left font-semibold">有休</th>
+            <th className="px-3 py-3 text-left font-semibold">半休</th>
+            <th className="px-3 py-3 text-left font-semibold">勤務</th>
+            <th className="px-3 py-3 text-left font-semibold">出勤</th>
+            <th className="px-3 py-3 text-left font-semibold">退勤</th>
+            <th className="px-3 py-3 text-left font-semibold">休憩</th>
+            <th className="px-3 py-3 text-left font-semibold">時間外</th>
+            <th className="px-3 py-3 text-left font-semibold">不足</th>
+            <th className="px-3 py-3 text-left font-semibold">備考</th>
           </tr>
         </thead>
         <tbody>
           {records.map((record) => {
             const date = parseISODate(record.date);
             const holiday = holidayName(date);
+            const isToday = record.date === todayKey;
+            const isKoukyu = record.koukyu === "○";
             const shift = shiftFor(record.shiftCode);
             const stored = contractFromRecord(record);
             const weekDuty = !stored && record.halfDayType === "none" ? dutyFromSetting(weeklySchedule?.[date.getDay()]) : null;
@@ -86,33 +90,48 @@ export function LedgerTable({
               (record.dayOfWeek === "木" || record.dayOfWeek === "土") &&
               !record.shiftCode &&
               !hasFullLeave(record);
+            const statusLabel =
+              record.shiftCode === "明け"
+                ? "明け"
+                : record.yukyu === "○"
+                  ? "有休"
+                  : record.koukyu === "○"
+                    ? "公休"
+                    : record.halfDayType === "am"
+                      ? "午前半休"
+                      : record.halfDayType === "pm"
+                        ? "午後半休"
+                        : record.patternLabel ||
+                          (record.shiftCode && record.shiftCode !== "free" ? shiftLabel(record.shiftCode) : "");
             return (
               <tr
                 key={record.date}
                 id={`day-${record.date}`}
-                className={cn(
-                  "border-b border-border/70 align-top",
-                  record.dayOfWeek === "日" && "bg-red-50/80",
-                  record.dayOfWeek === "土" && "bg-sky-50/70",
-                  holiday && record.dayOfWeek !== "日" && record.dayOfWeek !== "土" && "bg-amber-50/80",
-                  record.date === todayKey && "outline outline-2 -outline-offset-2 outline-sky-500",
-                )}
+                className={ledgerRowClass({
+                  dayOfWeek: record.dayOfWeek,
+                  isHoliday: Boolean(holiday),
+                  isKoukyu,
+                  isToday,
+                })}
               >
-                <td className="px-2 py-1.5">
-                  <div className={cn("font-medium tabular-nums", record.date === todayKey && "text-primary")}>
+                <td className="relative px-3 py-2.5">
+                  {isToday ? <span className="absolute inset-y-2 left-0 w-1 rounded-full bg-amber-500" aria-hidden /> : null}
+                  <div className={cn("font-mono text-sm font-semibold tabular-nums", isToday && "text-amber-900")}>
                     {record.dayOfMonth}
+                    {isToday ? <span className="ml-1 text-[10px] font-bold text-amber-700">今日</span> : null}
                   </div>
-                  {holiday ? <div className="text-[10px] text-amber-800">{holiday}</div> : null}
+                  {holiday ? <div className="text-[10px] font-medium text-rose-700">{holiday}</div> : null}
                 </td>
-                <td className={cn("px-2 py-1.5", weekdayTone(record.dayOfWeek))}>{record.dayOfWeek}</td>
-                <td className="px-2 py-1.5">
+                <td className={cn("px-3 py-2.5", weekdayTextClass(record.dayOfWeek, Boolean(holiday)))}>{record.dayOfWeek}</td>
+                <td className="px-3 py-2.5">
                   <MarkButton
                     label="公休"
                     pressed={record.koukyu === "○"}
+                    tone="koukyu"
                     onClick={() => onRecord(record.date, chooseFullLeave(record, "koukyu", record.koukyu !== "○"))}
                   />
                 </td>
-                <td className="px-2 py-1.5">
+                <td className="px-3 py-2.5">
                   <select
                     aria-label={`${record.date} 欠勤`}
                     className={field}
@@ -124,25 +143,26 @@ export function LedgerTable({
                     <option value="△">△ 半日</option>
                   </select>
                 </td>
-                <td className="px-2 py-1.5">
+                <td className="px-3 py-2.5">
                   <MarkButton
                     label="特忌"
                     pressed={record.tokki === "○"}
                     onClick={() => onRecord(record.date, chooseFullLeave(record, "tokki", record.tokki !== "○"))}
                   />
                 </td>
-                <td className="px-2 py-1.5">
+                <td className="px-3 py-2.5">
                   {record.halfDayType === "am" || record.halfDayType === "pm" ? (
-                    <span className="inline-flex h-7 items-center text-sm font-semibold">△</span>
+                    <span className={shiftBadgeClass("half")}>△</span>
                   ) : (
                     <MarkButton
                       label="有休"
                       pressed={record.yukyu === "○"}
+                      tone="yukyu"
                       onClick={() => onRecord(record.date, chooseFullLeave(record, "yukyu", record.yukyu !== "○"))}
                     />
                   )}
                 </td>
-                <td className="px-2 py-1.5">
+                <td className="px-3 py-2.5">
                   <select
                     aria-label={`${record.date} 半休`}
                     className={cn(field, "min-w-24")}
@@ -172,10 +192,13 @@ export function LedgerTable({
                     {record.halfDayType === "pm_off" ? <option value="pm_off">午後休</option> : null}
                   </select>
                 </td>
-                <td className="px-2 py-1.5">
+                <td className="px-3 py-2.5">
+                  {statusLabel ? (
+                    <span className={cn("mb-1.5", shiftBadgeClass(shiftToneFromLabel(statusLabel)))}>{statusLabel}</span>
+                  ) : null}
                   <select
                     aria-label={`${record.date} 勤務`}
-                    className={cn(field, "min-w-28")}
+                    className={cn(field, "mt-1 min-w-28")}
                     value={
                       patterns.some((pattern) => pattern.id === record.patternId)
                         ? `pattern:${record.patternId}`
@@ -217,14 +240,13 @@ export function LedgerTable({
                     ) : null}
                     {!showAke && record.shiftCode === "明け" ? <option value="明け">明け</option> : null}
                   </select>
-                  {record.patternLabel ? <p className="mt-1 text-[10px] font-medium">{record.patternLabel}</p> : null}
                   {duty?.start ? (
-                    <p className="mt-1 text-[10px] text-muted-foreground">
+                    <p className="mt-1.5 font-mono text-[10px] tabular-nums text-muted-foreground">
                       所定 {duty.start}–{duty.overnight ? `翌${duty.end}` : duty.end} / {formatHours(duty.scheduledMinutes)}h
                       {record.clockIn && record.clockOut ? ` · 実働 ${formatHours(worked)}h` : ""}
                     </p>
                   ) : null}
-                  <div className="mt-1 flex max-w-56 flex-wrap gap-1">
+                  <div className="mt-1.5 flex max-w-64 flex-wrap gap-1">
                     {patterns.map((pattern) => (
                       <button
                         key={pattern.id}
@@ -233,13 +255,11 @@ export function LedgerTable({
                         aria-pressed={record.patternId === pattern.id}
                         onClick={() => onRecord(record.date, applyShiftPattern(record, pattern))}
                         className={cn(
-                          "rounded-full border px-1.5 py-0.5 text-[10px]",
-                          record.patternId === pattern.id
-                            ? "border-sky-600 bg-sky-50 font-semibold text-sky-950"
-                            : "border-border bg-background hover:bg-muted",
+                          "rounded-full border px-2 py-0.5 text-[10px]",
+                          shiftBadgeClass(shiftToneFromLabel(pattern.label), record.patternId === pattern.id),
                         )}
                       >
-                        {patternButtonLabel(pattern)}
+                        {pattern.label.trim() || "無題"}
                       </button>
                     ))}
                     {showAke ? (
@@ -248,7 +268,7 @@ export function LedgerTable({
                         aria-label={`${record.date} 明け`}
                         aria-pressed={record.shiftCode === "明け"}
                         onClick={() => onRecord(record.date, applyAke(record))}
-                        className="rounded-full border border-border bg-background px-1.5 py-0.5 text-[10px] hover:bg-muted"
+                        className={cn("rounded-full px-2 py-0.5 text-[10px]", shiftBadgeClass("ake", record.shiftCode === "明け"))}
                       >
                         明け
                       </button>
@@ -258,7 +278,7 @@ export function LedgerTable({
                       aria-label={`${record.date} 公休`}
                       aria-pressed={record.koukyu === "○"}
                       onClick={() => onRecord(record.date, chooseFullLeave(record, "koukyu", record.koukyu !== "○"))}
-                      className="rounded-full border border-border bg-background px-1.5 py-0.5 text-[10px] hover:bg-muted"
+                      className={cn("rounded-full px-2 py-0.5 text-[10px]", shiftBadgeClass("koukyu", record.koukyu === "○"))}
                     >
                       公休
                     </button>
@@ -275,10 +295,10 @@ export function LedgerTable({
                 </td>
                 <TimeCell label="出勤" record={record} field="clockIn" scheduledMinutes={scheduledMinutes} dutyOverride={contract} onRecord={onRecord} />
                 <TimeCell label="退勤" record={record} field="clockOut" scheduledMinutes={scheduledMinutes} dutyOverride={contract} onRecord={onRecord} />
-                <td className="px-2 py-1.5">
+                <td className="px-3 py-2.5">
                   <input
                     aria-label={`${record.date} 休憩`}
-                    className={cn(field, "w-16 tabular-nums")}
+                    className={cn(monoField, "w-16")}
                     type="number"
                     min={0}
                     step={5}
@@ -293,21 +313,21 @@ export function LedgerTable({
                   />
                 </td>
                 <OvertimeCell record={record} scheduledMinutes={scheduledMinutes} onRecord={onRecord} />
-                <td className="px-2 py-1.5">
+                <td className="px-3 py-2.5">
                   <input
                     aria-label={`${record.date} 不足`}
-                    className={cn(field, "w-16 tabular-nums")}
+                    className={cn(monoField, "w-16")}
                     value={record.shortageTime}
                     placeholder="0:30"
                     onChange={(event) => onRecord(record.date, editShortage(record, event.target.value))}
                   />
                 </td>
-                <td className="px-2 py-1.5">
-                  <div className="flex items-center gap-1">
-                    {record.halfDayType === "am" ? <HalfTag>午前半休</HalfTag> : null}
-                    {record.halfDayType === "pm" ? <HalfTag>午後半休</HalfTag> : null}
-                    {record.halfDayType === "am_off" ? <HalfTag>午前休</HalfTag> : null}
-                    {record.halfDayType === "pm_off" ? <HalfTag>午後休</HalfTag> : null}
+                <td className="px-3 py-2.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {record.halfDayType === "am" ? <span className={shiftBadgeClass("half")}>午前半休</span> : null}
+                    {record.halfDayType === "pm" ? <span className={shiftBadgeClass("half")}>午後半休</span> : null}
+                    {record.halfDayType === "am_off" ? <span className={shiftBadgeClass("half")}>午前休</span> : null}
+                    {record.halfDayType === "pm_off" ? <span className={shiftBadgeClass("half")}>午後休</span> : null}
                     <input
                       aria-label={`${record.date} 備考`}
                       className={field}
@@ -349,10 +369,10 @@ function TimeCell({
   onRecord: (date: string, next: DailyRecord) => void;
 }) {
   return (
-    <td className="px-2 py-1.5">
+    <td className="px-3 py-2.5 align-middle">
       <input
         aria-label={`${record.date} ${label}`}
-        className={cn(field, "w-[6.5rem] tabular-nums")}
+        className={cn(monoField, "w-[6.75rem]")}
         type="time"
         value={record[key]}
         onChange={(event) => onRecord(record.date, editClocks(record, { [key]: event.target.value }, scheduledMinutes, dutyOverride))}
@@ -374,9 +394,11 @@ function OvertimeCell({
   const tracked = Boolean(record.contractStart && record.contractEnd);
   if ((knownShift || tracked) && !record.overtimeManual) {
     return (
-      <td className="px-2 py-1.5">
-        <p className="text-xs tabular-nums">{record.overtimeSpan || "—"}</p>
-        <p className="text-xs font-medium">{record.overtimeMinutes ? formatMinutesJa(record.overtimeMinutes) : "—"}</p>
+      <td className="px-3 py-2.5 align-middle">
+        <p className="font-mono text-xs tabular-nums">{record.overtimeSpan || "—"}</p>
+        <p className="font-mono text-xs font-medium tabular-nums">
+          {record.overtimeMinutes ? formatMinutesJa(record.overtimeMinutes) : "—"}
+        </p>
         <button
           type="button"
           className="text-[10px] text-muted-foreground underline-offset-2 hover:underline"
@@ -389,17 +411,17 @@ function OvertimeCell({
   }
 
   return (
-    <td className="px-2 py-1.5">
+    <td className="px-3 py-2.5 align-middle">
       <input
         aria-label={`${record.date} 時間外`}
-        className={cn(field, "mb-1")}
+        className={cn(monoField, "mb-1")}
         value={record.overtimeSpan}
         placeholder="18:00〜19:30"
         onChange={(event) => onRecord(record.date, editOvertime(record, event.target.value, record.overtimeMinutes))}
       />
       <input
         aria-label={`${record.date} 超え分`}
-        className={cn(field, "w-16 tabular-nums")}
+        className={cn(monoField, "w-16")}
         type="number"
         min={0}
         step={5}
@@ -422,7 +444,17 @@ function OvertimeCell({
   );
 }
 
-function MarkButton({ label, pressed, onClick }: { label: string; pressed: boolean; onClick: () => void }) {
+function MarkButton({
+  label,
+  pressed,
+  onClick,
+  tone,
+}: {
+  label: string;
+  pressed: boolean;
+  onClick: () => void;
+  tone?: "koukyu" | "yukyu";
+}) {
   return (
     <button
       type="button"
@@ -431,23 +463,17 @@ function MarkButton({ label, pressed, onClick }: { label: string; pressed: boole
       title={label}
       onClick={onClick}
       className={cn(
-        "flex h-7 w-7 items-center justify-center rounded-md border text-xs font-semibold",
+        "flex h-8 min-w-8 items-center justify-center rounded-md border px-1.5 text-xs font-semibold transition-colors",
         pressed
-          ? "border-primary bg-primary text-primary-foreground"
-          : "border-border bg-background text-muted-foreground hover:bg-muted",
+          ? tone === "yukyu"
+            ? "border-teal-300 bg-teal-100 text-teal-900"
+            : tone === "koukyu"
+              ? "border-gray-300 bg-gray-200 text-gray-800"
+              : "border-primary bg-primary text-primary-foreground"
+          : "border-border bg-white text-muted-foreground hover:bg-muted",
       )}
     >
       {pressed ? "○" : label.slice(0, 1)}
     </button>
   );
-}
-
-function HalfTag({ children }: { children: string }) {
-  return <span className="shrink-0 rounded bg-accent px-1.5 py-0.5 text-[10px] font-medium">{children}</span>;
-}
-
-function weekdayTone(day: string): string {
-  if (day === "日") return "font-medium text-red-700";
-  if (day === "土") return "font-medium text-sky-800";
-  return "";
 }

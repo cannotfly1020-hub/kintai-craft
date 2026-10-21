@@ -1,5 +1,6 @@
 import { HALF_RULE_LABEL, ROLE_LABEL } from "@/lib/schedule";
 import { EMPLOYMENT_LABEL, patternButtonLabel } from "@/lib/shift-patterns";
+import { shiftBadgeClass, shiftToneFromLabel } from "@/lib/shift-ui";
 import type { CustomShiftPattern, EmploymentType, HalfDayRuleType, StaffRole } from "@/types/kintai";
 import { cn } from "@/lib/utils";
 
@@ -29,7 +30,7 @@ export function ScheduleBar({
   onLeave: (kind: "koukyu" | "yukyu") => void;
 }) {
   return (
-    <section className="rounded-xl bg-card p-3 ring-1 ring-foreground/10" aria-label="本日のシフト">
+    <section className="rounded-2xl bg-gradient-to-r from-white via-slate-50 to-sky-50/40 p-4 ring-1 ring-slate-200/80" aria-label="本日のシフト">
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-xs text-muted-foreground">
           {ROLE_LABEL[role]} · {EMPLOYMENT_LABEL[employmentType]} · {HALF_RULE_LABEL[halfDayRule]}
@@ -37,14 +38,15 @@ export function ScheduleBar({
         <button
           type="button"
           onClick={onApplyMonth}
-          className="ml-auto rounded-md border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
+          className="ml-auto rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50"
         >
           週間設定を1ヶ月分に反映
         </button>
       </div>
-      <div className="mt-2 flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
         {patterns.map((pattern) => {
           const selected = activePatternId === pattern.id;
+          const tone = shiftToneFromLabel(pattern.label);
           return (
             <button
               key={pattern.id}
@@ -54,10 +56,9 @@ export function ScheduleBar({
               disabled={!canApplyToday}
               onClick={() => onApplyPattern(pattern)}
               className={cn(
-                "rounded-full border px-3 py-1.5 text-sm",
-                selected
-                  ? "border-sky-600 bg-sky-50 font-semibold text-sky-950 ring-2 ring-sky-600"
-                  : "border-border bg-background hover:bg-muted",
+                "rounded-full px-3 py-1.5 text-sm disabled:opacity-50",
+                shiftBadgeClass(tone, selected),
+                selected && "font-semibold",
               )}
             >
               {patternButtonLabel(pattern)}
@@ -70,7 +71,7 @@ export function ScheduleBar({
             aria-pressed={activePatternId === "ake"}
             disabled={!canApplyToday}
             onClick={onAke}
-            className="rounded-full border border-border bg-background px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
+            className={cn("rounded-full px-3 py-1.5 text-sm disabled:opacity-50", shiftBadgeClass("ake", activePatternId === "ake"))}
           >
             明け
           </button>
@@ -79,7 +80,7 @@ export function ScheduleBar({
           type="button"
           disabled={!canApplyToday}
           onClick={() => onLeave("koukyu")}
-          className="rounded-full border border-border bg-background px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
+          className={cn("rounded-full px-3 py-1.5 text-sm disabled:opacity-50", shiftBadgeClass("koukyu"))}
         >
           公休
         </button>
@@ -87,7 +88,7 @@ export function ScheduleBar({
           type="button"
           disabled={!canApplyToday}
           onClick={() => onLeave("yukyu")}
-          className="rounded-full border border-border bg-background px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
+          className={cn("rounded-full px-3 py-1.5 text-sm disabled:opacity-50", shiftBadgeClass("yukyu"))}
         >
           有休
         </button>
