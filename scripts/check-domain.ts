@@ -378,7 +378,7 @@ const shortDay = applyShiftPattern(emptyRecord(new Date(2026, 9, 21)), shortPatt
 assert.equal(shortDay.clockIn, "09:00");
 assert.equal(shortDay.clockOut, "16:00");
 assert.equal(shortDay.breakMinutes, 60);
-assert.equal(shortDay.shiftCode, "free");
+assert.equal(shortDay.shiftCode, "時短");
 assert.equal(shortDay.patternLabel, "時短");
 assert.equal(shortDay.overtimeMinutes, 0);
 assert.equal(shortDay.shortageTime, "");
@@ -390,7 +390,23 @@ const nightDay = applyShiftPattern(emptyRecord(new Date(2026, 9, 21)), night);
 assert.equal(nightDay.clockIn, "16:00");
 assert.equal(nightDay.clockOut, "09:00");
 assert.equal(nightDay.isOvernight, true);
+assert.equal(nightDay.shiftCode, "夜勤");
+assert.equal(nightDay.koukyu, "");
 assert.equal(nightDay.overtimeMinutes, 0);
+assert.equal(recomputeScheduled({ startTime: "16:00", endTime: "09:00", breakMinutes: 60, scheduledMinutes: 0, shiftCode: "夜勤", isHoliday: false }).scheduledMinutes, 960);
+const nightMonth = applyShiftPattern(
+  createAttendance({ year: 2026, month: 10, jobType: "rehab_part", staffName: "夜勤" }).records.find((record) => record.date === "2026-09-21")!,
+  night,
+);
+assert.equal(nightMonth.clockIn, "16:00");
+assert.equal(nightMonth.clockOut, "09:00");
+const nightSummary = summarize({
+  ...createAttendance({ year: 2026, month: 10, jobType: "rehab_part", staffName: "夜勤" }),
+  records: createAttendance({ year: 2026, month: 10, jobType: "rehab_part", staffName: "夜勤" }).records.map((record) =>
+    record.date === "2026-09-21" ? nightMonth : record,
+  ),
+});
+assert.equal(nightSummary.workedMinutes, 960);
 const nightLate = editClocks(nightDay, { clockOut: "09:30" });
 assert.equal(nightLate.overtimeMinutes, 30);
 assert.equal(nightLate.overtimeSpan, "09:00〜09:30");

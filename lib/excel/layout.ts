@@ -1,4 +1,4 @@
-import type { JobType, ShiftCode } from "@/types/kintai";
+import type { JobType, KnownShiftCode } from "@/types/kintai";
 
 export const TEMPLATE_FILE = "attendance_template.xlsx";
 
@@ -27,7 +27,7 @@ export interface ColumnMap {
   kekkin: number;
   tokki: number;
   yukyu: number;
-  shifts: { code: Exclude<ShiftCode, "" | "free">; col: number; header: string }[];
+  shifts: { code: Exclude<KnownShiftCode, "" | "free">; col: number; header: string }[];
   otStart: number;
   otEnd: number;
   otText: number;

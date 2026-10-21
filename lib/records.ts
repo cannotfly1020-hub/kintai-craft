@@ -216,20 +216,15 @@ export function chooseShift(record: DailyRecord, code: ShiftCode, _personalMinut
   );
 }
 
-function knownShiftCode(value: string): ShiftCode {
-  if (value === "B-2" || value === "A-1" || value === "D" || value === "7.5H") return value;
-  return "";
-}
-
 export function applyShiftPattern(record: DailyRecord, pattern: CustomShiftPattern): DailyRecord {
   const duty = dutyFromPattern(pattern);
   if (!duty) return record;
-  const known = shiftFor(knownShiftCode(pattern.shiftCode));
+  const shiftCode = pattern.shiftCode.trim() || pattern.label.trim() || "free";
   return deriveRecord({
     ...record,
-    shiftCode: known ? known.code : "free",
+    shiftCode,
     patternId: pattern.id,
-    patternLabel: pattern.label.trim() || pattern.shiftCode || "シフト",
+    patternLabel: pattern.label.trim() || shiftCode,
     contractStart: duty.start,
     contractEnd: duty.end,
     contractBreak: duty.breakMinutes,
@@ -245,6 +240,30 @@ export function applyShiftPattern(record: DailyRecord, pattern: CustomShiftPatte
     overtimeManual: false,
     shortageManual: false,
   });
+}
+
+export function applyAke(record: DailyRecord): DailyRecord {
+  return {
+    ...record,
+    ...emptyPatternFields(),
+    patternId: "ake",
+    patternLabel: "明け",
+    shiftCode: "明け",
+    clockIn: "",
+    clockOut: "",
+    breakMinutes: 0,
+    isOvernight: false,
+    halfDayType: "none",
+    koukyu: "",
+    tokki: "",
+    yukyu: "",
+    kekkin: "",
+    overtimeSpan: "",
+    overtimeMinutes: 0,
+    overtimeManual: false,
+    shortageTime: "",
+    shortageManual: false,
+  };
 }
 
 export function chooseHalf(record: DailyRecord, half: HalfDayType, personalMinutes?: number | null): DailyRecord {

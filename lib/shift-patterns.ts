@@ -64,6 +64,15 @@ export function patternScheduledMinutes(pattern: Pick<CustomShiftPattern, "start
   return scheduledWorkMinutes(pattern.startTime, pattern.endTime, pattern.breakMinutes);
 }
 
+export function patternButtonLabel(pattern: Pick<CustomShiftPattern, "label" | "startTime" | "endTime">): string {
+  const end = crossesMidnight(pattern.startTime, pattern.endTime) ? `翌${pattern.endTime}` : pattern.endTime;
+  return `${pattern.label.trim() || "無題"} (${pattern.startTime}-${end})`;
+}
+
+export function patternShiftCode(pattern: Pick<CustomShiftPattern, "label" | "shiftCode">): string {
+  return pattern.shiftCode.trim() || pattern.label.trim();
+}
+
 export function withOvernight(pattern: CustomShiftPattern): CustomShiftPattern {
   const overnight = Boolean(pattern.isOvernight) || crossesMidnight(pattern.startTime, pattern.endTime);
   return { ...pattern, isOvernight: overnight };

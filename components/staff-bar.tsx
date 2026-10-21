@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { StaffMember } from "@/lib/staff";
 import { HALF_RULE_LABEL, ROLE_LABEL, WEEKDAY_NAMES, dayFromShiftCode, presetForRole, recomputeScheduled } from "@/lib/schedule";
-import { blankPattern, defaultShiftPatterns, EMPLOYMENT_LABEL, patternScheduledMinutes, SHIFT_PATTERN_LIMIT, withOvernight } from "@/lib/shift-patterns";
+import { blankPattern, defaultShiftPatterns, EMPLOYMENT_LABEL, patternButtonLabel, patternScheduledMinutes, patternShiftCode, SHIFT_PATTERN_LIMIT, withOvernight } from "@/lib/shift-patterns";
 import { JOB_LABEL, SHIFTS, shiftsForJob } from "@/lib/shifts";
 import { formatHours } from "@/lib/time";
 import type { CustomShiftPattern, DayShiftSetting, EmploymentType, HalfDayRuleType, JobType, ShiftCode, StaffRole } from "@/types/kintai";
@@ -156,8 +156,31 @@ function StaffForm({
     });
   }
 
-  function changeSymbol(index: number, code: ShiftCode) {
-    putDay(index, dayFromShiftCode(code));
+  function changeSymbol(index: number, value: string) {
+    if (value.startsWith("pattern:")) {
+      const pattern = shiftPatterns.find((item) => item.id === value.slice("pattern:".length));
+      if (!pattern) return;
+      putDay(index, {
+        startTime: pattern.startTime,
+        endTime: pattern.endTime,
+        breakMinutes: pattern.breakMinutes,
+        shiftCode: patternShiftCode(pattern),
+        isHoliday: false,
+      });
+      return;
+    }
+    putDay(index, dayFromShiftCode(value));
+  }
+
+  function symbolValue(day: DayShiftSetting): string {
+    const match = shiftPatterns.find(
+      (item) =>
+        patternShiftCode(item) === day.shiftCode &&
+        item.startTime === day.startTime &&
+        item.endTime === day.endTime &&
+        item.breakMinutes === day.breakMinutes,
+    );
+    return match ? `pattern:${match.id}` : day.shiftCode;
   }
 
   function toggleHoliday(index: number, on: boolean) {
@@ -442,10 +465,15 @@ function StaffForm({
                   <select
                     aria-label={`${label} 記号`}
                     className={field}
-                    value={day.shiftCode}
-                    onChange={(event) => changeSymbol(index, event.target.value as ShiftCode)}
+                    value={symbolValue(day)}
+                    onChange={(event) => changeSymbol(index, event.target.value)}
                   >
                     <option value="">—</option>
+                    {shiftPatterns.map((pattern) => (
+                      <option key={pattern.id} value={`pattern:${pattern.id}`}>
+                        {pattern.label.trim() || patternButtonLabel(pattern)}
+                      </option>
+                    ))}
                     {shiftChoices.map((shift) => (
                       <option key={shift.code} value={shift.code}>
                         {shift.code}

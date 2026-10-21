@@ -2,6 +2,7 @@ import { hasFullLeave } from "@/lib/calc";
 import { parseISODate } from "@/lib/date";
 import { holidayName } from "@/lib/holidays";
 import {
+  applyAke,
   applyShiftPattern,
   chooseFullLeave,
   chooseHalf,
@@ -14,10 +15,10 @@ import {
   resetAutomaticOvertime,
 } from "@/lib/records";
 import { dutyFromSetting } from "@/lib/schedule";
-import { contractFromRecord } from "@/lib/shift-patterns";
+import { contractFromRecord, patternButtonLabel, patternShiftCode } from "@/lib/shift-patterns";
 import { SHIFTS, describeShift, expectedDuty, shiftFor, shiftsForJob, type DutyWindow } from "@/lib/shifts";
 import { formatHours, formatMinutesJa, scheduledWorkMinutes } from "@/lib/time";
-import type { CustomShiftPattern, DailyRecord, DayShiftSetting, HalfDayRuleType, JobType, LeaveMark, ShiftCode } from "@/types/kintai";
+import type { CustomShiftPattern, DailyRecord, DayShiftSetting, HalfDayRuleType, JobType, LeaveMark } from "@/types/kintai";
 import { cn } from "@/lib/utils";
 
 const field =
@@ -173,16 +174,45 @@ export function LedgerTable({
                   <select
                     aria-label={`${record.date} 勤務`}
                     className={cn(field, "min-w-28")}
-                    value={record.shiftCode}
-                    onChange={(event) => onRecord(record.date, chooseShift(record, event.target.value as ShiftCode, scheduledMinutes))}
+                    value={
+                      patterns.some((pattern) => pattern.id === record.patternId)
+                        ? `pattern:${record.patternId}`
+                        : record.shiftCode
+                    }
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (value.startsWith("pattern:")) {
+                        const pattern = patterns.find((item) => item.id === value.slice("pattern:".length));
+                        if (pattern) onRecord(record.date, applyShiftPattern(record, pattern));
+                        return;
+                      }
+                      if (value === "明け") {
+                        onRecord(record.date, applyAke(record));
+                        return;
+                      }
+                      onRecord(record.date, chooseShift(record, value, scheduledMinutes));
+                    }}
                   >
                     <option value="">—</option>
+                    {patterns.map((pattern) => (
+                      <option key={pattern.id} value={`pattern:${pattern.id}`}>
+                        {pattern.label || patternShiftCode(pattern)}
+                      </option>
+                    ))}
                     {shifts.map((item) => (
                       <option key={item.code} value={item.code}>
                         {item.label}
                       </option>
                     ))}
                     <option value="free">自由</option>
+                    <option value="明け">明け</option>
+                    {record.shiftCode &&
+                    record.shiftCode !== "free" &&
+                    record.shiftCode !== "明け" &&
+                    !shifts.some((item) => item.code === record.shiftCode) &&
+                    !patterns.some((pattern) => pattern.id === record.patternId) ? (
+                      <option value={record.shiftCode}>{record.patternLabel || record.shiftCode}</option>
+                    ) : null}
                   </select>
                   {record.patternLabel ? <p className="mt-1 text-[10px] font-medium">{record.patternLabel}</p> : null}
                   {duty?.start ? (
@@ -191,27 +221,43 @@ export function LedgerTable({
                       {record.clockIn && record.clockOut ? ` · 実働 ${formatHours(worked)}h` : ""}
                     </p>
                   ) : null}
-                  {patterns.length > 0 ? (
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {patterns.map((pattern) => (
-                        <button
-                          key={pattern.id}
-                          type="button"
-                          aria-label={`${record.date} ${pattern.label || "シフト"}`}
-                          aria-pressed={record.patternId === pattern.id}
-                          onClick={() => onRecord(record.date, applyShiftPattern(record, pattern))}
-                          className={cn(
-                            "rounded-full border px-1.5 py-0.5 text-[10px]",
-                            record.patternId === pattern.id
-                              ? "border-sky-600 bg-sky-50 font-semibold text-sky-950"
-                              : "border-border bg-background hover:bg-muted",
-                          )}
-                        >
-                          {pattern.label || "無題"}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
+                  <div className="mt-1 flex max-w-56 flex-wrap gap-1">
+                    {patterns.map((pattern) => (
+                      <button
+                        key={pattern.id}
+                        type="button"
+                        aria-label={`${record.date} ${patternButtonLabel(pattern)}`}
+                        aria-pressed={record.patternId === pattern.id}
+                        onClick={() => onRecord(record.date, applyShiftPattern(record, pattern))}
+                        className={cn(
+                          "rounded-full border px-1.5 py-0.5 text-[10px]",
+                          record.patternId === pattern.id
+                            ? "border-sky-600 bg-sky-50 font-semibold text-sky-950"
+                            : "border-border bg-background hover:bg-muted",
+                        )}
+                      >
+                        {patternButtonLabel(pattern)}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      aria-label={`${record.date} 明け`}
+                      aria-pressed={record.shiftCode === "明け"}
+                      onClick={() => onRecord(record.date, applyAke(record))}
+                      className="rounded-full border border-border bg-background px-1.5 py-0.5 text-[10px] hover:bg-muted"
+                    >
+                      明け
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`${record.date} 公休`}
+                      aria-pressed={record.koukyu === "○"}
+                      onClick={() => onRecord(record.date, chooseFullLeave(record, "koukyu", record.koukyu !== "○"))}
+                      className="rounded-full border border-border bg-background px-1.5 py-0.5 text-[10px] hover:bg-muted"
+                    >
+                      公休
+                    </button>
+                  </div>
                   {suggestD ? (
                     <button
                       type="button"

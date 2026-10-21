@@ -17,11 +17,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { formatISODate } from "@/lib/date";
 import { HALF_RULE_LABEL, ROLE_LABEL, applyStaffDay, applyWeeklySchedule } from "@/lib/schedule";
 import { formatClosingTitle, formatPeriodLabel, defaultClosing, getPeriod, shiftClosing } from "@/lib/period";
-import { applyHolidayDefaults, applyShiftPattern, chooseFullLeave, chooseShift, createAttendance } from "@/lib/records";
-import { JOB_LABEL, SHIFTS, shiftsForJob } from "@/lib/shifts";
+import { applyAke, applyHolidayDefaults, applyShiftPattern, chooseFullLeave, createAttendance } from "@/lib/records";
+import { patternButtonLabel } from "@/lib/shift-patterns";
+import { JOB_LABEL } from "@/lib/shifts";
 import { loadStaffMonth, saveStaffRecords, type StaffMember } from "@/lib/staff";
 import { attendanceFileName } from "@/lib/storage";
-import type { CustomShiftPattern, DailyRecord, MonthlyAttendance, ShiftCode } from "@/types/kintai";
+import type { CustomShiftPattern, DailyRecord, MonthlyAttendance } from "@/types/kintai";
 
 const MONTH_ITEMS = Object.fromEntries(Array.from({ length: 12 }, (_, index) => [String(index + 1), `${index + 1}月`]));
 
@@ -108,7 +109,6 @@ export function AttendanceApp() {
   const period = getPeriod(attendance.year, attendance.month);
   const book = attendance;
   const activeStaff = currentStaff;
-  const shifts = activeStaff.role === "custom" ? Object.values(SHIFTS) : shiftsForJob(attendance.jobType);
   const today = formatISODate(new Date());
   const todayRecord = book.records.find((record) => record.date === today);
   const halfMode: "normal" | "am" | "pm" | null = todayRecord
@@ -148,17 +148,6 @@ export function AttendanceApp() {
     if (!accepted) return;
     commitAttendance(activeStaff.id, applyWeeklySchedule(book, activeStaff));
     setNotice({ tone: "ok", text: `${range} を週間設定で反映し、保存しました。` });
-    scrollToDay(today);
-  }
-
-  function applyShift(code: ShiftCode) {
-    const record = book.records.find((item) => item.date === today);
-    if (!record) {
-      setNotice({ tone: "ok", text: "この締め月に本日がないため、勤務記号は入れていません。" });
-      return;
-    }
-    updateRecord(today, chooseShift(record, code));
-    setNotice(null);
     scrollToDay(today);
   }
 
@@ -334,6 +323,16 @@ export function AttendanceApp() {
           onHalf={selectHalf}
           onApplyMonth={applyMonth}
           onApplyPattern={(pattern) => applyPattern(today, pattern)}
+          onAke={() => {
+            const record = book.records.find((item) => item.date === today);
+            if (!record) {
+              setNotice({ tone: "ok", text: "この締め月に本日がないため、明けは入れていません。" });
+              return;
+            }
+            updateRecord(today, applyAke(record));
+            setNotice(null);
+            scrollToDay(today);
+          }}
           onLeave={(kind) => applyLeave(today, kind)}
         />
         <Card>
@@ -460,27 +459,45 @@ export function AttendanceApp() {
             </div>
 
             <div className="flex flex-col justify-end gap-2 md:col-span-2">
-              <p className="text-xs font-medium text-muted-foreground">本日の勤務記号</p>
+              <p className="text-xs font-medium text-muted-foreground">本日のマイ・シフト</p>
               <div className="flex flex-wrap gap-2">
                 <Badge variant="secondary">{formatPeriodLabel(attendance.year, attendance.month)}</Badge>
-                {shifts.map((shift) => {
-                  const selected = todayRecord?.shiftCode === shift.code && todayRecord.halfDayType === "none" && !todayRecord.koukyu;
+                {activeStaff.shiftPatterns.map((pattern) => {
+                  const selected = todayRecord?.patternId === pattern.id;
                   return (
                     <button
-                      key={shift.code}
+                      key={pattern.id}
                       type="button"
                       aria-pressed={selected}
-                      onClick={() => applyShift(shift.code)}
+                      disabled={!todayRecord}
+                      onClick={() => applyPattern(today, pattern)}
                       className={
                         selected
                           ? "rounded-full border border-sky-600 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-950 ring-2 ring-sky-600"
-                          : "rounded-full border border-border bg-background px-2.5 py-1 text-xs hover:bg-muted"
+                          : "rounded-full border border-border bg-background px-2.5 py-1 text-xs hover:bg-muted disabled:opacity-50"
                       }
                     >
-                      {shift.label} {shift.start} / {shift.end}
+                      {patternButtonLabel(pattern)}
                     </button>
                   );
                 })}
+                <button
+                  type="button"
+                  aria-pressed={todayRecord?.shiftCode === "明け"}
+                  disabled={!todayRecord}
+                  onClick={() => todayRecord && updateRecord(today, applyAke(todayRecord))}
+                  className="rounded-full border border-border bg-background px-2.5 py-1 text-xs hover:bg-muted disabled:opacity-50"
+                >
+                  明け
+                </button>
+                <button
+                  type="button"
+                  disabled={!todayRecord}
+                  onClick={() => applyLeave(today, "koukyu")}
+                  className="rounded-full border border-border bg-background px-2.5 py-1 text-xs hover:bg-muted disabled:opacity-50"
+                >
+                  公休
+                </button>
               </div>
             </div>
           </CardContent>

@@ -39,7 +39,9 @@ export interface DayShiftSetting {
   isHoliday: boolean;
 }
 
-export type ShiftCode = "B-2" | "A-1" | "D" | "7.5H" | "free" | "";
+export type KnownShiftCode = "B-2" | "A-1" | "D" | "7.5H" | "free" | "";
+
+export type ShiftCode = string;
 
 export interface DailyRecord {
   date: string;

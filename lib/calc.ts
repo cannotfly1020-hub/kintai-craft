@@ -1,6 +1,6 @@
-import type { DailyRecord, LeaveMark, MonthlyAttendance, ShiftCode } from "@/types/kintai";
+import type { DailyRecord, LeaveMark, MonthlyAttendance, KnownShiftCode } from "@/types/kintai";
 import { shiftFor } from "@/lib/shifts";
-import { formatMinutesJa, parseDurationMinutes, parseHHMM, formatHHMM } from "@/lib/time";
+import { formatMinutesJa, parseDurationMinutes, parseHHMM, formatHHMM, scheduledWorkMinutes } from "@/lib/time";
 
 export interface Deviation {
   overtimeMinutes: number;
@@ -15,10 +15,11 @@ export interface MonthSummary {
   kekkin: number;
   tokki: number;
   yukyu: number;
-  shifts: Partial<Record<Exclude<ShiftCode, "" | "free">, number>>;
+  shifts: Partial<Record<Exclude<KnownShiftCode, "" | "free">, number>>;
   paidLeaveRemaining: number;
   overtimeMinutes: number;
   shortageMinutes: number;
+  workedMinutes: number;
   attendanceDays: number;
   lunchCount: number;
   lunchAmount: number;
@@ -44,13 +45,20 @@ export function hasFullLeave(record: DailyRecord): boolean {
 }
 
 export function shiftMarkFor(record: DailyRecord): LeaveMark {
-  if (!record.shiftCode || record.shiftCode === "free" || hasFullLeave(record)) return "";
+  if (!record.shiftCode || record.shiftCode === "free" || record.shiftCode === "明け" || hasFullLeave(record)) return "";
+  if (!shiftFor(record.shiftCode)) return "";
   return record.halfDayType === "none" ? "○" : "△";
+}
+
+export function workedMinutes(record: DailyRecord): number {
+  if (hasFullLeave(record) || record.shiftCode === "明け" || !record.clockIn || !record.clockOut) return 0;
+  return scheduledWorkMinutes(record.clockIn, record.clockOut, record.breakMinutes);
 }
 
 export function attendanceUnits(record: DailyRecord): number {
   if (hasFullLeave(record)) return 0;
-  if (record.shiftCode && record.shiftCode !== "free") return markValue(shiftMarkFor(record));
+  if (record.shiftCode === "明け") return 0;
+  if (record.shiftCode && record.shiftCode !== "free" && shiftFor(record.shiftCode)) return markValue(shiftMarkFor(record));
   if (record.clockIn && record.clockOut) {
     return record.halfDayType === "none" && record.kekkin !== "△" ? 1 : 0.5;
   }
@@ -78,7 +86,8 @@ export function noteForExport(record: DailyRecord): string {
 
 function patternNote(record: DailyRecord): string {
   const label = record.patternLabel.trim();
-  if (!label || !record.contractStart || !record.contractEnd) return "";
+  if (!label) return "";
+  if (!record.contractStart || !record.contractEnd) return label;
   const end = record.isOvernight ? `翌${record.contractEnd}` : record.contractEnd;
   return `${label} ${record.contractStart}〜${end}`;
 }
@@ -153,6 +162,7 @@ export function summarize(attendance: MonthlyAttendance): MonthSummary {
     paidLeaveRemaining: 0,
     overtimeMinutes: 0,
     shortageMinutes: 0,
+    workedMinutes: 0,
     attendanceDays: 0,
     lunchCount: attendance.lunchCount,
     lunchAmount: attendance.lunchCount * attendance.lunchUnitPrice,
@@ -166,6 +176,7 @@ export function summarize(attendance: MonthlyAttendance): MonthSummary {
     summary.tokki += markValue(record.tokki);
     summary.yukyu += markValue(record.yukyu);
     summary.attendanceDays += attendanceUnits(record);
+    summary.workedMinutes += workedMinutes(record);
     summary.overtimeMinutes += record.overtimeMinutes;
 
     const shortage = parseDurationMinutes(record.shortageTime);

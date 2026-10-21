@@ -1,5 +1,5 @@
 import { overtimeLabel, summarize } from "@/lib/calc";
-import { formatDayCount } from "@/lib/time";
+import { formatDayCount, formatHours } from "@/lib/time";
 import { shiftsForJob } from "@/lib/shifts";
 import type { MonthlyAttendance } from "@/types/kintai";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,6 +33,7 @@ export function SummaryPanel({ attendance }: { attendance: MonthlyAttendance }) 
           value={`${formatDayCount(summary.paidLeaveRemaining)}日`}
           tone={summary.paidLeaveRemaining < 0 ? "alert" : "default"}
         />
+        <Stat label="実働合計" value={`${formatHours(summary.workedMinutes)}h`} />
         <Stat label="時間外休日合計" value={durationOrZero(summary.overtimeMinutes)} />
         <Stat label="欠勤合計" value={durationOrZero(summary.shortageMinutes)} />
         <Stat label="出勤合計" value={`${formatDayCount(summary.attendanceDays)}日`} />

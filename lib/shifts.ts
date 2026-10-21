@@ -1,11 +1,11 @@
-import type { HalfDayType, JobType, ShiftCode } from "@/types/kintai";
+import type { HalfDayType, JobType, KnownShiftCode } from "@/types/kintai";
 import { formatHHMM, formatHours, parseHHMM } from "@/lib/time";
 
 export const AM_HALF_MINUTES = 210;
 export const PM_HALF_MINUTES = 240;
 
 export interface ShiftDefinition {
-  code: Exclude<ShiftCode, "" | "free">;
+  code: Exclude<KnownShiftCode, "" | "free">;
   label: string;
   jobs: JobType[];
   start: string;
@@ -93,8 +93,8 @@ export const SHIFTS: Record<ShiftDefinition["code"], ShiftDefinition> = {
   },
 };
 
-export function shiftFor(code: ShiftCode): ShiftDefinition | null {
-  if (!code || code === "free") return null;
+export function shiftFor(code: string): ShiftDefinition | null {
+  if (code !== "B-2" && code !== "A-1" && code !== "D" && code !== "7.5H") return null;
   return SHIFTS[code];
 }
 
@@ -102,9 +102,10 @@ export function shiftsForJob(job: JobType): ShiftDefinition[] {
   return Object.values(SHIFTS).filter((shift) => shift.jobs.includes(job));
 }
 
-export function shiftAllowed(job: JobType, code: ShiftCode): boolean {
-  if (code === "" || code === "free") return true;
-  return SHIFTS[code].jobs.includes(job);
+export function shiftAllowed(job: JobType, code: string): boolean {
+  const shift = shiftFor(code);
+  if (!shift) return code === "" || code === "free";
+  return shift.jobs.includes(job);
 }
 
 export function expectedDuty(shift: ShiftDefinition, half: HalfDayType, personalMinutes?: number | null): DutyWindow {

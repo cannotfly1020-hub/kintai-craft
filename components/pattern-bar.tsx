@@ -1,6 +1,5 @@
 import { HALF_RULE_LABEL, ROLE_LABEL, WEEKDAY_NAMES } from "@/lib/schedule";
-import { EMPLOYMENT_LABEL } from "@/lib/shift-patterns";
-import { crossesMidnight } from "@/lib/time";
+import { EMPLOYMENT_LABEL, patternButtonLabel } from "@/lib/shift-patterns";
 import type { CustomShiftPattern, DayShiftSetting, EmploymentType, HalfDayRuleType, StaffRole } from "@/types/kintai";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +15,7 @@ export function ScheduleBar({
   onHalf,
   onApplyMonth,
   onApplyPattern,
+  onAke,
   onLeave,
 }: {
   role: StaffRole;
@@ -29,6 +29,7 @@ export function ScheduleBar({
   onHalf: (mode: "normal" | "am" | "pm") => void;
   onApplyMonth: () => void;
   onApplyPattern: (pattern: CustomShiftPattern) => void;
+  onAke: () => void;
   onLeave: (kind: "koukyu" | "yukyu") => void;
 }) {
   const halves =
@@ -76,7 +77,6 @@ export function ScheduleBar({
           <div className="flex flex-wrap gap-2">
             {patterns.map((pattern) => {
               const selected = activePatternId === pattern.id;
-              const end = crossesMidnight(pattern.startTime, pattern.endTime) ? `翌${pattern.endTime}` : pattern.endTime;
               return (
                 <button
                   key={pattern.id}
@@ -85,21 +85,30 @@ export function ScheduleBar({
                   disabled={!canApplyToday}
                   onClick={() => onApplyPattern(pattern)}
                   className={cn(
-                    "rounded-full border px-3 py-1.5 text-left text-xs",
+                    "rounded-full border px-3 py-1.5 text-left text-sm",
                     selected
                       ? "border-sky-600 bg-sky-50 font-semibold text-sky-950 ring-2 ring-sky-600"
                       : "border-border bg-background hover:bg-muted",
                   )}
                 >
-                  {pattern.label || "無題"} ({pattern.startTime}–{end})
+                  {patternButtonLabel(pattern)}
                 </button>
               );
             })}
             <button
               type="button"
+              aria-pressed={activePatternId === "ake"}
+              disabled={!canApplyToday}
+              onClick={onAke}
+              className="rounded-full border border-border bg-background px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
+            >
+              明け
+            </button>
+            <button
+              type="button"
               disabled={!canApplyToday}
               onClick={() => onLeave("koukyu")}
-              className="rounded-full border border-border bg-background px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-50"
+              className="rounded-full border border-border bg-background px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
             >
               公休
             </button>
@@ -107,7 +116,7 @@ export function ScheduleBar({
               type="button"
               disabled={!canApplyToday}
               onClick={() => onLeave("yukyu")}
-              className="rounded-full border border-border bg-background px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-50"
+              className="rounded-full border border-border bg-background px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
             >
               有休
             </button>

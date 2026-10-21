@@ -244,5 +244,5 @@ function normalizeWeek(value: unknown, fallback: Record<number, DayShiftSetting>
 }
 
 function isShiftCode(value: unknown): value is ShiftCode {
-  return value === "B-2" || value === "A-1" || value === "D" || value === "7.5H" || value === "free" || value === "";
+  return typeof value === "string";
 }

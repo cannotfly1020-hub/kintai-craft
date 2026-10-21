@@ -1,7 +1,7 @@
 import type { DailyRecord, DayShiftSetting, HalfDayRuleType, MonthlyAttendance, ShiftCode, StaffRole } from "@/types/kintai";
 import { deriveRecord, emptyPatternFields } from "@/lib/records";
 import { expectedDuty, shiftFor, type DutyWindow } from "@/lib/shifts";
-import { formatHHMM, parseHHMM } from "@/lib/time";
+import { crossesMidnight, formatHHMM, parseHHMM, scheduledWorkMinutes } from "@/lib/time";
 
 export const ROLE_LABEL: Record<StaffRole, string> = {
   pt_outpatient: "理学療法士（外来）",
@@ -219,15 +219,14 @@ export function dutyFromSetting(day: DayShiftSetting | undefined): DutyWindow | 
     end: scheduled.endTime,
     breakMinutes: scheduled.breakMinutes,
     scheduledMinutes: scheduled.scheduledMinutes,
+    overnight: crossesMidnight(scheduled.startTime, scheduled.endTime),
   };
 }
 
 export function recomputeScheduled(day: DayShiftSetting): DayShiftSetting {
   if (day.isHoliday) return holidayDay();
-  const start = parseHHMM(day.startTime);
-  const end = parseHHMM(day.endTime);
-  if (start == null || end == null || end <= start) return { ...day, scheduledMinutes: 0 };
-  return { ...day, scheduledMinutes: Math.max(0, end - start - (Number(day.breakMinutes) || 0)) };
+  if (!day.startTime || !day.endTime) return { ...day, scheduledMinutes: 0 };
+  return { ...day, scheduledMinutes: scheduledWorkMinutes(day.startTime, day.endTime, day.breakMinutes) };
 }
 
 function applyScheduleDay(
