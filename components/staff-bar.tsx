@@ -105,7 +105,6 @@ function StaffForm({
     employmentType: "full_time" as const,
     shiftPatterns: defaultShiftPatterns("pt_outpatient", "full_time"),
     contractHoursPerDay: undefined,
-    hourlyWage: undefined,
   };
   const [name, setName] = useState(initial?.name ?? "");
   const [role, setRole] = useState<StaffRole>(seed.role);
@@ -114,7 +113,6 @@ function StaffForm({
   const [paidLeave, setPaidLeave] = useState(String(seed.initialPaidLeave));
   const [employmentType, setEmploymentType] = useState<EmploymentType>(seed.employmentType);
   const [contractHours, setContractHours] = useState(seed.contractHoursPerDay != null ? String(seed.contractHoursPerDay) : "");
-  const [hourlyWage, setHourlyWage] = useState(seed.hourlyWage != null ? String(seed.hourlyWage) : "");
   const [shiftPatterns, setShiftPatterns] = useState<CustomShiftPattern[]>(() => seed.shiftPatterns.map((item) => ({ ...item })));
   const [weeklySchedule, setWeeklySchedule] = useState(() => linkWeekToPatterns(cloneWeek(seed.weeklySchedule), seed.shiftPatterns));
   const [error, setError] = useState("");
@@ -324,7 +322,6 @@ function StaffForm({
     }
     const leave = Number(paidLeave);
     const contract = Number(contractHours);
-    const wage = Number(hourlyWage);
     onSave({
       name: trimmed,
       role,
@@ -335,7 +332,6 @@ function StaffForm({
       employmentType,
       shiftPatterns: shiftPatterns.map((item) => withOvernight({ ...item, label: item.label.trim() })),
       contractHoursPerDay: employmentType === "part_time" && contract > 0 ? Math.round(contract * 10) / 10 : undefined,
-      hourlyWage: employmentType === "part_time" && wage > 0 ? Math.round(wage) : undefined,
     });
   }
 
@@ -392,33 +388,19 @@ function StaffForm({
             </select>
           </label>
           {employmentType === "part_time" ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="flex flex-col gap-1 text-sm">
-                <Label htmlFor="new-staff-contract">1日の契約時間（有休換算用）</Label>
-                <Input
-                  id="new-staff-contract"
-                  type="number"
-                  min={0.5}
-                  max={24}
-                  step={0.5}
-                  value={contractHours}
-                  onChange={(event) => setContractHours(event.target.value)}
-                />
-                <span className="text-xs text-muted-foreground">終日有休は曜日の所定を優先し、所定がない日はこの時間です。初期値は4.0時間です。</span>
-              </label>
-              <label className="flex flex-col gap-1 text-sm">
-                <Label htmlFor="new-staff-wage">時給（任意）</Label>
-                <Input
-                  id="new-staff-wage"
-                  type="number"
-                  min={0}
-                  step={10}
-                  value={hourlyWage}
-                  placeholder="1200"
-                  onChange={(event) => setHourlyWage(event.target.value)}
-                />
-              </label>
-            </div>
+            <label className="flex flex-col gap-1 text-sm">
+              <Label htmlFor="new-staff-contract">1日の契約時間（有休換算用）</Label>
+              <Input
+                id="new-staff-contract"
+                type="number"
+                min={0.5}
+                max={24}
+                step={0.5}
+                value={contractHours}
+                onChange={(event) => setContractHours(event.target.value)}
+              />
+              <span className="text-xs text-muted-foreground">終日有休は曜日の所定を優先し、所定がない日はこの時間です。初期値は4.0時間です。</span>
+            </label>
           ) : null}
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-2">

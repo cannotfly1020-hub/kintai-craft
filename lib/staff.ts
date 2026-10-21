@@ -16,6 +16,7 @@ export interface StaffMember {
   employmentType: EmploymentType;
   shiftPatterns: CustomShiftPattern[];
   contractHoursPerDay?: number;
+  /** 旧localStorage互換のみ。UIでは扱わない */
   hourlyWage?: number;
 }
 
