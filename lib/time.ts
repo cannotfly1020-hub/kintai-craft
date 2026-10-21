@@ -76,12 +76,17 @@ export function formatDecimalHours(totalMinutes: number): string {
 
 export function formatWorkedHoursLabel(totalMinutes: number): string {
   const minutes = Math.max(0, Math.round(totalMinutes));
-  const clock = formatMinutesJa(minutes) || "0時間";
-  return `${clock}（${formatDecimalHours(minutes)}時間）`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return `${hours}時間${String(rest).padStart(2, "0")}分 (${formatDecimalHours(minutes)}h)`;
 }
 
 export function formatPaidLeaveHours(totalMinutes: number): string {
-  return `${formatDecimalHours(totalMinutes)}時間`;
+  return `${formatDecimalHours(totalMinutes)}h`;
+}
+
+export function formatPaidLeaveSummaryLabel(totalMinutes: number, days: number): string {
+  return `${formatDecimalHours(totalMinutes)}h (${formatDayCount(days)}日)`;
 }
 
 export function formatDayCount(value: number): string {

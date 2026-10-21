@@ -236,11 +236,19 @@ function paintFooter(sheet: ExcelJS.Worksheet, lastCol: number) {
         right: edgeRight ? medium : thin,
       };
       cell.font = font(10, col <= 2);
-      cell.alignment = { vertical: "middle", horizontal: col <= 2 ? "left" : "center" };
+      cell.alignment = {
+        vertical: "middle",
+        horizontal: col <= 2 ? "left" : "center",
+        shrinkToFit: col >= 3,
+      };
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3F7F6" } };
     }
     sheet.getCell(rowNumber, 1).value = FOOTER_LABELS[rowNumber - start];
     sheet.mergeCells(rowNumber, 1, rowNumber, 2);
+    // 日数小計行以外は値欄を横結合し、右側の空きマス感と文字見切れを防ぐ
+    if (rowNumber > start) {
+      sheet.mergeCells(rowNumber, 3, rowNumber, lastCol);
+    }
   }
 }
 

@@ -726,9 +726,11 @@ const partExcel = new ExcelJS.Workbook();
 await partExcel.xlsx.load((await renderAttendanceWorkbook(partMonth, partHours)) as unknown as ArrayBuffer);
 const partSheet = partExcel.getWorksheet(SHEET_NAME.pt);
 assert.ok(partSheet);
-assert.equal(footerCell(partSheet, "勤務時間合計"), "4時間（4.0時間）");
-assert.equal(footerCell(partSheet, "有休時間合計"), "13.5時間（取得日数: 2.5日）");
-assert.equal(footerCell(partSheet, "支給対象時間"), "17時間30分（17.5時間）");
+assert.equal(footerCell(partSheet, "勤務時間合計"), "4時間00分 (4.0h)");
+assert.equal(footerCell(partSheet, "有休時間合計"), "13.5h (2.5日)");
+assert.equal(footerCell(partSheet, "支給対象時間"), "17時間30分 (17.5h)");
+assert.equal(partSheet.getCell(49, 3).isMerged || Boolean(partSheet.getCell(49, 3).master), true);
+assert.equal(partSheet.getCell(49, 3).alignment?.shrinkToFit, true);
 
 assert.equal(sheet.pageSetup.paperSize, 9);
 assert.equal(sheet.pageSetup.orientation, "landscape");
