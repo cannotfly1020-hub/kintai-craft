@@ -17,12 +17,13 @@
 /.next/
 /out/
 
-# tauri
+# tauri (legacy; Electron へ移行済み)
 /src-tauri/target/
 /src-tauri/gen/schemas/
 
-# production
-/build
+# electron
+/dist/
+/.electron-builder*
 
 # misc
 .DS_Store

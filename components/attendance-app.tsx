@@ -9,6 +9,7 @@ import { ScheduleBar } from "@/components/schedule-bar";
 import { StaffBar } from "@/components/staff-bar";
 import { useStaff } from "@/components/staff-provider";
 import { SummaryPanel } from "@/components/summary-panel";
+import { runDesktopDailyBackup } from "@/lib/desktop-backup";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -118,6 +119,12 @@ export function AttendanceApp() {
     if (!attendance || !currentStaff) return;
     if (attendanceStaffId.current !== currentStaff.id) return;
     saveStaffRecords(currentStaff.id, attendance);
+    const timer = window.setTimeout(() => {
+      void runDesktopDailyBackup(true).catch((error) => {
+        console.warn("[desktop-backup] autosave soft-fail:", error);
+      });
+    }, 2500);
+    return () => window.clearTimeout(timer);
   }, [attendance, currentStaff]);
 
   if (!ready || !attendance || !currentStaff) {

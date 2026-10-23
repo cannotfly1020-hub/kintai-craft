@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { runDesktopDailyBackup } from "@/lib/desktop-backup";
 import {
   createStaffId,
   deleteStaffRecords,
@@ -40,6 +41,9 @@ export function StaffProvider({ children }: { children: ReactNode }) {
     setCurrentStaffId(workspace.currentId);
     setCurrentUserIdState(workspace.currentUserId);
     setReady(true);
+    void runDesktopDailyBackup().catch((error) => {
+      console.warn("[desktop-backup] startup backup soft-fail:", error);
+    });
   }, []);
 
   const selectStaff = useCallback((staffId: string) => {

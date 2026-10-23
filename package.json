@@ -1,14 +1,16 @@
 {
   "name": "kintai-craft",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
+  "main": "main.js",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "build:export": "cross-env KINTAI_DESKTOP=1 next build",
+    "electron:dev": "concurrently -k \"npm run dev\" \"wait-on http://localhost:3000 && electron .\"",
+    "build:win": "npm run build:export && electron-builder --win",
     "start": "next start",
     "lint": "eslint",
-    "tauri": "tauri",
     "generate:template": "tsx scripts/generate-template.ts",
     "check": "tsx scripts/generate-template.ts && tsx scripts/check-domain.ts"
   },
@@ -28,15 +30,44 @@
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
-    "@tauri-apps/cli": "^2.12.3",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^9.0.0",
     "cross-env": "^10.1.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.4.2",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wait-on": "^8.0.0"
+  },
+  "build": {
+    "appId": "com.kintai.craft",
+    "productName": "kintai-craft 出勤簿",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json",
+      "out/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "kintai-craft 出勤簿"
+    }
   }
 }
