@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:pages": "cross-env GITHUB_PAGES=1 next build",
     "build:export": "cross-env KINTAI_DESKTOP=1 next build",
     "electron:dev": "concurrently -k \"npm run dev\" \"wait-on http://localhost:3000 && electron .\"",
     "build:win": "npm run build:export && electron-builder --win --publish never",

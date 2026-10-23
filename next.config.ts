@@ -1,13 +1,23 @@
 import type { NextConfig } from "next";
 
-/** Electron / 静的エクスポート用ビルド時 */
+/** Electron 向け静的エクスポート（basePath なし） */
 const desktop = process.env.KINTAI_DESKTOP === "1";
+/** GitHub Pages 向け静的エクスポート（/kintai-craft サブルート） */
+const pages = process.env.GITHUB_PAGES === "1";
+const staticExport = desktop || pages;
 
 const nextConfig: NextConfig = {
-  ...(desktop
+  ...(staticExport
     ? {
         output: "export" as const,
         images: { unoptimized: true },
+        trailingSlash: true,
+        ...(pages
+          ? {
+              basePath: "/kintai-craft",
+              assetPrefix: "/kintai-craft/",
+            }
+          : {}),
       }
     : {
         serverExternalPackages: ["exceljs"],
