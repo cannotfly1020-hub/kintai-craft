@@ -23,6 +23,8 @@ jobs:
         env:
           # CI 上でコード署名をスキップ
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          # electron-builder の GitHub 自動公開を使わない（Artifact のみ）
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/upload-artifact@v4
         with:
